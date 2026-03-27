@@ -1,0 +1,155 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(cuid())
+  sf_employee_id   String   @unique
+  full_name        String
+  email            String   @unique
+  password_hash    String
+  grade            String?
+  designation      String?
+  department       String?
+  division         String?
+  company          String?
+  roles            Json     @default("[]")
+  hrbp_id          String?
+  line_manager_id  String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  // Relations
+  hrbp             User?    @relation("HRBPEmployees", fields: [hrbp_id], references: [id])
+  employees        User[]   @relation("HRBPEmployees")
+  line_manager     User?    @relation("ManagerReports", fields: [line_manager_id], references: [id])
+  direct_reports   User[]   @relation("ManagerReports")
+
+  // Clearance request relations
+  clearance_requests_as_employee  ClearanceRequest[] @relation("EmployeeClearance")
+  clearance_requests_initiated    ClearanceRequest[] @relation("HRBPInitiated")
+
+  // Activity logs
+  activity_logs    ActivityLog[]
+
+  // Notifications
+  notifications    Notification[]
+
+  @@map("users")
+}
+
+model ClearanceRequest {
+  id                  String    @id @default(cuid())
+  employee_id         String
+  initiated_by_hrbp_id String
+  status              String    @default("DRAFT")
+  date_of_leaving     DateTime?
+  issued_by           String?
+  issuance_date       DateTime?
+  receiving_date      DateTime?
+  pdf_generated       Boolean   @default(false)
+  pdf_generated_at    DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  // Relations
+  employee            User      @relation("EmployeeClearance", fields: [employee_id], references: [id])
+  initiated_by_hrbp   User      @relation("HRBPInitiated", fields: [initiated_by_hrbp_id], references: [id])
+
+  clearance_sections  ClearanceSection[]
+  finance_entries     FinanceEntry[]
+  activity_logs       ActivityLog[]
+  notifications       Notification[]
+
+  @@map("clearance_requests")
+}
+
+model ClearanceSection {
+  id                   String    @id @default(cuid())
+  clearance_request_id String
+  section_key          String
+  status               String    @default("PENDING")
+  approver_id          String?
+  approver_name        String?
+  decision_at          DateTime?
+  note                 String?   @db.Text
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  // Relations
+  clearance_request    ClearanceRequest @relation(fields: [clearance_request_id], references: [id], onDelete: Cascade)
+  clearance_items      ClearanceItem[]
+
+  @@map("clearance_sections")
+}
+
+model ClearanceItem {
+  id                   String   @id @default(cuid())
+  clearance_section_id String
+  item_key             String
+  description          String
+  comments             String?  @db.Text
+  status               String   @default("PENDING")
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  // Relations
+  clearance_section    ClearanceSection @relation(fields: [clearance_section_id], references: [id], onDelete: Cascade)
+
+  @@map("clearance_items")
+}
+
+model FinanceEntry {
+  id                   String   @id @default(cuid())
+  clearance_request_id String
+  gl_account           String?
+  particulars          String
+  amount_pkr           Decimal? @db.Decimal(15, 2)
+  section_group        String
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  // Relations
+  clearance_request    ClearanceRequest @relation(fields: [clearance_request_id], references: [id], onDelete: Cascade)
+
+  @@map("finance_entries")
+}
+
+model ActivityLog {
+  id                   String   @id @default(cuid())
+  clearance_request_id String
+  actor_id             String
+  action               String
+  details              String   @db.Text
+  created_at           DateTime @default(now())
+
+  // Relations
+  clearance_request    ClearanceRequest @relation(fields: [clearance_request_id], references: [id], onDelete: Cascade)
+  actor                User             @relation(fields: [actor_id], references: [id])
+
+  @@map("activity_log")
+}
+
+model Notification {
+  id                   String   @id @default(cuid())
+  recipient_id         String
+  clearance_request_id String
+  type                 String
+  message              String   @db.Text
+  read                 Boolean  @default(false)
+  created_at           DateTime @default(now())
+
+  // Relations
+  recipient            User             @relation(fields: [recipient_id], references: [id])
+  clearance_request    ClearanceRequest @relation(fields: [clearance_request_id], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
