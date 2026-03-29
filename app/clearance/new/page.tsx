@@ -190,7 +190,7 @@ function EmployeeSearch({
       )}
       {open && results.length === 0 && !searching && query.trim() && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-4 text-sm text-gray-500 text-center">
-          No employees found for "{query}"
+          No employees found for &quot;{query}&quot;
         </div>
       )}
     </div>

@@ -99,7 +99,7 @@ export default function ApproverSummaryPanel({
               {/* Note */}
               {section.note && (
                 <p className="mt-1.5 text-xs text-gray-500 italic leading-relaxed">
-                  "{section.note}"
+                  &quot;{section.note}&quot;
                 </p>
               )}
 
