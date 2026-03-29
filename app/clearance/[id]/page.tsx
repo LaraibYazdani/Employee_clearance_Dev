@@ -99,6 +99,7 @@ export default function ClearanceDetailPage() {
 
   const [clearance, setClearance] = useState<ClearanceRequest | null>(null)
   const [activity, setActivity] = useState<Notification[]>([])
+  const [financeEntries, setFinanceEntries] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeSection, setActiveSection] = useState<string | null>(null)
@@ -143,10 +144,26 @@ export default function ClearanceDetailPage() {
     }
   }, [token, id, authHeaders])
 
+  const fetchFinanceEntries = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch(`/api/clearance/${id}/finance`, {
+        headers: authHeaders(),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setFinanceEntries(Array.isArray(data) ? data : [])
+      }
+    } catch {
+      // Non-critical — ignore
+    }
+  }, [token, id, authHeaders])
+
   useEffect(() => {
     fetchClearance()
     fetchActivity()
-  }, [fetchClearance, fetchActivity])
+    fetchFinanceEntries()
+  }, [fetchClearance, fetchActivity, fetchFinanceEntries])
 
   // Poll every 30 seconds
   useEffect(() => {
@@ -163,6 +180,7 @@ export default function ClearanceDetailPage() {
     setLoading(true)
     fetchClearance()
     fetchActivity()
+    fetchFinanceEntries()
   }
 
   /* Role checks */
@@ -190,11 +208,13 @@ export default function ClearanceDetailPage() {
 
   const canActOnSection = (sec: ClearanceSection): boolean => {
     if (sec.status === 'LOCKED') return false
+    if (sec.status !== 'PENDING') return false
     if (isSuperAdmin) return true
     if (isHRBP) return false
-    if (isDeptApprover && userSectionKey === sec.section_key) {
-      return sec.status === 'PENDING'
-    }
+    // Allow if the user is the assigned approver for this section
+    if (sec.approver_id && sec.approver_id === user?.id) return true
+    // Allow if the user has the matching role for this section
+    if (isDeptApprover && userSectionKey === sec.section_key) return true
     return false
   }
 
@@ -384,12 +404,15 @@ export default function ClearanceDetailPage() {
                   {/* Finance section gets its own component */}
                   {currentSection.section_key === 'FINANCE' ? (
                     <FinanceSection
+                      key={currentSection.id + currentSection.status}
                       clearanceId={id}
-                      entries={[]}
+                      entries={financeEntries}
                       isApprover={
                         isDeptApprover && userSectionKey === 'FINANCE'
+                          || (currentSection.approver_id != null && currentSection.approver_id === user?.id)
                       }
                       sectionStatus={currentSection.status}
+                      onActionComplete={handleRefresh}
                     />
                   ) : (
                     <>
@@ -403,8 +426,9 @@ export default function ClearanceDetailPage() {
                       )}
 
                       {/* Section action form — shown to the approver for action, or read-only when already actioned */}
-                      {(canActOnSection(currentSection) || currentSection.status === 'APPROVED' || (isSuperAdmin && currentSection.status !== 'LOCKED')) && (
+                      {(canActOnSection(currentSection) || currentSection.status === 'APPROVED' || isSuperAdmin) && (
                         <SectionActionForm
+                          key={currentSection.id + currentSection.status}
                           section={currentSection}
                           clearanceId={id}
                           onActionComplete={handleRefresh}

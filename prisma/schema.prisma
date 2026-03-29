@@ -21,6 +21,9 @@ model User {
   department       String?
   division         String?
   company          String?
+  company_code     String?
+  photo_url        String?  @db.Text
+  sf_synced_at     DateTime?
   roles            Json     @default("[]")
   hrbp_id          String?
   line_manager_id  String?
@@ -42,6 +45,9 @@ model User {
 
   // Notifications
   notifications    Notification[]
+
+  // Approver assignments
+  approver_assignments ApproverAssignment[] @relation("ApproverAssignments")
 
   @@map("users")
 }
@@ -92,19 +98,36 @@ model ClearanceSection {
 }
 
 model ClearanceItem {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   clearance_section_id String
   item_key             String
   description          String
-  comments             String?  @db.Text
-  status               String   @default("PENDING")
-  created_at           DateTime @default(now())
-  updated_at           DateTime @updatedAt
+  comments             String?   @db.Text
+  status               String    @default("PENDING")
+  approver_id          String?
+  approver_name        String?
+  decision_at          DateTime?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
 
   // Relations
   clearance_section    ClearanceSection @relation(fields: [clearance_section_id], references: [id], onDelete: Cascade)
 
   @@map("clearance_items")
+}
+
+model ApproverAssignment {
+  id           String   @id @default(cuid())
+  company_code String
+  section_key  String
+  item_key     String
+  approver_id  String
+  approver     User     @relation("ApproverAssignments", fields: [approver_id], references: [id])
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([company_code, section_key, item_key])
+  @@map("approver_assignments")
 }
 
 model FinanceEntry {

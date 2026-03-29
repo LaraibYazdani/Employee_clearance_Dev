@@ -84,13 +84,13 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
-              label="Email address"
-              type="email"
+              label="Employee ID or Email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
+              placeholder="e.g. 10009673"
               required
-              autoComplete="email"
+              autoComplete="username"
               autoFocus
             />
             <Input
@@ -117,11 +117,11 @@ export default function LoginPage() {
             </div>
           </form>
 
-          {/* Demo hint */}
-          <div className="mt-6 rounded-lg bg-gray-50 border border-gray-200 p-3">
-            <p className="text-xs font-medium text-gray-500 mb-1">Demo credentials</p>
-            <p className="text-xs text-gray-600 font-mono">ayesha.malik@company.com</p>
-            <p className="text-xs text-gray-600 font-mono">password123</p>
+          {/* Hint */}
+          <div className="mt-6 rounded-lg bg-blue-50 border border-blue-100 p-3">
+            <p className="text-xs text-blue-700">
+              Use your <strong>SAP SuccessFactors Employee ID</strong> and password to sign in.
+            </p>
           </div>
         </div>
       </div>

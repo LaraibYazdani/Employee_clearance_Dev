@@ -61,11 +61,21 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
   const user = req.user!
   const { id: clearanceId } = context.params as { id: string }
 
-  if (!user.roles.includes('DEPT_APPROVER_FINANCE')) {
-    return NextResponse.json(
-      { error: 'Forbidden', message: 'Only DEPT_APPROVER_FINANCE can update finance entries' },
-      { status: 403 }
-    )
+  // Allow role-based OR assigned approver for the finance section
+  const isFinanceRole = user.roles.includes('DEPT_APPROVER_FINANCE')
+  const isSuperAdmin = user.roles.includes('SUPER_ADMIN')
+  if (!isFinanceRole && !isSuperAdmin) {
+    // Check if user is the assigned approver for the FINANCE section
+    const finSection = await prisma.clearanceSection.findFirst({
+      where: { clearance_request_id: clearanceId, section_key: 'FINANCE' },
+      select: { approver_id: true },
+    })
+    if (finSection?.approver_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Forbidden', message: 'You are not authorized to update finance entries' },
+        { status: 403 }
+      )
+    }
   }
 
   let body: {

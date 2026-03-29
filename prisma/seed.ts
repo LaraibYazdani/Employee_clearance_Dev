@@ -17,6 +17,7 @@ export async function runSeed(): Promise<void> {
   await prisma.clearanceItem.deleteMany({})
   await prisma.clearanceSection.deleteMany({})
   await prisma.clearanceRequest.deleteMany({})
+  await prisma.approverAssignment.deleteMany({})
   await prisma.user.deleteMany({})
   console.log('All tables cleared.')
 
@@ -1640,13 +1641,76 @@ export async function runSeed(): Promise<void> {
   })
   console.log('Activity logs created.')
 
+  // -------------------------------------------------------------------------
+  // Default approver (SF employee 10009673) + approver assignments
+  // -------------------------------------------------------------------------
+  console.log('Creating default approver and approver assignments...')
+
+  const defaultApprover = await prisma.user.upsert({
+    where: { sf_employee_id: '10009673' },
+    update: {},
+    create: {
+      id: 'user-default-approver',
+      sf_employee_id: '10009673',
+      full_name: 'Default Approver',
+      email: 'default.approver@packagesli.com',
+      password_hash: passwordHash,
+      grade: 'M2',
+      designation: 'Approver',
+      department: 'Human Resources',
+      division: 'People & Culture',
+      company: 'Packages Ltd.',
+      company_code: '1000',
+      roles: [
+        'DEPT_APPROVER_IR', 'DEPT_APPROVER_IT', 'DEPT_APPROVER_SUPPLY',
+        'DEPT_APPROVER_ICS', 'DEPT_APPROVER_SECURITY', 'DEPT_APPROVER_OTHER',
+        'DEPT_APPROVER_HEAD', 'DEPT_APPROVER_OD', 'DEPT_APPROVER_HR', 'DEPT_APPROVER_FINANCE',
+      ],
+    },
+  })
+
+  const COMPANY_CODES = ['1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700']
+  const ALL_SECTION_ITEMS: Record<string, string[]> = {
+    IR_DEPT:           ['social_security_card', 'fair_price_shop', 'uniform_locker'],
+    IT_DEPT:           ['laptop_data_clearance', 'email_sap_deactivation', 'it_other'],
+    SUPPLY_MGMT:       ['central_stores', 'supply_other'],
+    ICS_DEPT:          ['library', 'workshop', 'ics_other'],
+    SECURITY:          ['gate_office', 'security_other'],
+    OTHER_FACILITIES:  ['telephone', 'electrical'],
+    DEPT_HEAD:         ['company_data_records', 'business_controller', 'dept_other'],
+    OD_DEPT:           ['training_bond', 'od_other'],
+    HR_DEPT:           ['employee_id_access_card', 'health_insurance_card', 'sim', 'cell_phone', 'laptop', 'vehicle_bike', 'fuel_card', 'project_buraq', 'hr_other'],
+  }
+
+  for (const companyCode of COMPANY_CODES) {
+    for (const [sectionKey, itemKeys] of Object.entries(ALL_SECTION_ITEMS)) {
+      for (const itemKey of itemKeys) {
+        await prisma.approverAssignment.upsert({
+          where: {
+            company_code_section_key_item_key: { company_code: companyCode, section_key: sectionKey, item_key: itemKey },
+          },
+          update: { approver_id: defaultApprover.id },
+          create: {
+            company_code: companyCode,
+            section_key: sectionKey,
+            item_key: itemKey,
+            approver_id: defaultApprover.id,
+          },
+        })
+      }
+    }
+  }
+
+  console.log(`Default approver assignments created for all ${COMPANY_CODES.length} companies.`)
+
   console.log('\nSeed completed successfully!')
   console.log('Summary:')
-  console.log('  - 16 users created (u1–u16)')
+  console.log('  - 17 users created (u1–u16 + default approver)')
   console.log('  - 4 clearance requests created (clr-001, clr-002, clr-003, clr-047)')
   console.log('  - Finance entries created for clr-003 (null amounts) and clr-047 (with amounts)')
   console.log('  - 7 notifications created')
   console.log('  - 20 activity log entries created')
+  console.log('  - Approver assignments seeded for all companies and sections')
 }
 
 // ---------------------------------------------------------------------------

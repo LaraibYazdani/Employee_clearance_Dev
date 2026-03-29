@@ -38,3 +38,6 @@ next-env.d.ts
 
 # prisma
 /prisma/migrations
+
+# debug endpoints — unauthenticated, not for deployment
+/app/api/debug/

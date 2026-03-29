@@ -19,10 +19,10 @@ interface SectionActionFormProps {
   onActionComplete: () => void
 }
 
-const itemStatusOptions: { value: ItemStatus; label: string }[] = [
-  { value: 'APPROVED', label: 'Approve' },
-  { value: 'NA', label: 'N/A' },
-  { value: 'PENDING', label: 'Pending' },
+const itemStatusOptions: { value: ItemStatus; label: string; color: string }[] = [
+  { value: 'APPROVED', label: 'Approved', color: 'bg-green-500 text-white border-green-500' },
+  { value: 'NA', label: 'N/A', color: 'bg-gray-400 text-white border-gray-400' },
+  { value: 'PENDING', label: 'Pending', color: 'bg-yellow-400 text-white border-yellow-400' },
 ]
 
 export default function SectionActionForm({
@@ -107,20 +107,35 @@ export default function SectionActionForm({
       {isReadOnly && (
         <div
           className={[
-            'rounded-lg px-4 py-3 text-sm font-medium flex items-center gap-2',
+            'rounded-lg px-4 py-3 text-sm border',
             isApproved
-              ? 'bg-green-50 text-green-800 border border-green-200'
+              ? 'bg-green-50 text-green-800 border-green-200'
               : isDenied
-              ? 'bg-red-50 text-red-800 border border-red-200'
-              : 'bg-gray-50 text-gray-600 border border-gray-200',
+              ? 'bg-red-50 text-red-800 border-red-200'
+              : 'bg-gray-50 text-gray-600 border-gray-200',
           ].join(' ')}
         >
-          <Badge status={section.status} />
-          <span>
-            {isApproved && `Section approved by ${section.approver_name ?? 'approver'}`}
-            {isDenied && `Section denied by ${section.approver_name ?? 'approver'}`}
-            {isLocked && 'Waiting for previous sections to be completed'}
-          </span>
+          <div className="flex items-center gap-2 font-medium">
+            <Badge status={section.status} />
+            <span>
+              {isApproved && `Approved by ${section.approver_name ?? 'approver'}`}
+              {isDenied && `Denied by ${section.approver_name ?? 'approver'}`}
+              {isLocked && 'Waiting for previous sections to be completed'}
+            </span>
+          </div>
+          {section.note && (
+            <p className="mt-1.5 text-xs opacity-80 italic">&ldquo;{section.note}&rdquo;</p>
+          )}
+        </div>
+      )}
+
+      {/* Assigned approver info */}
+      {section.approver_name && !isReadOnly && (
+        <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+          <svg className="w-4 h-4 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+          Assigned to <span className="font-medium text-gray-700">{section.approver_name}</span>
         </div>
       )}
 
@@ -131,38 +146,36 @@ export default function SectionActionForm({
             <thead className="bg-gray-50">
               <tr className="border-b border-gray-100">
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-2/5">
-                  Description
+                  Checklist Item
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-2/5">
                   Comments
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Status
+                  Result
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
               {items.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-4 py-3 text-gray-800 align-top">
+                <tr key={item.id} className={item.localStatus === 'APPROVED' ? 'bg-green-50/40' : item.localStatus === 'NA' ? 'bg-gray-50/60' : ''}>
+                  <td className="px-4 py-3 text-gray-800 align-middle font-medium">
                     {item.description}
                   </td>
-                  <td className="px-4 py-3 align-top">
+                  <td className="px-4 py-3 align-middle">
                     {isReadOnly ? (
                       <span className="text-gray-600">{item.localComments || '—'}</span>
                     ) : (
                       <input
                         type="text"
                         value={item.localComments}
-                        onChange={(e) =>
-                          updateItemComments(item.id, e.target.value)
-                        }
+                        onChange={(e) => updateItemComments(item.id, e.target.value)}
                         placeholder="Add comments..."
-                        className="w-full rounded border border-gray-200 px-2 py-1 text-sm text-gray-800 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
+                        className="w-full rounded border border-gray-200 px-2 py-1.5 text-sm text-gray-800 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
                       />
                     )}
                   </td>
-                  <td className="px-4 py-3 align-top">
+                  <td className="px-4 py-3 align-middle">
                     {isReadOnly ? (
                       <Badge status={item.localStatus} />
                     ) : (
@@ -175,11 +188,7 @@ export default function SectionActionForm({
                             className={[
                               'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
                               item.localStatus === opt.value
-                                ? opt.value === 'APPROVED'
-                                  ? 'bg-green-500 text-white border-green-500'
-                                  : opt.value === 'NA'
-                                  ? 'bg-gray-400 text-white border-gray-400'
-                                  : 'bg-yellow-400 text-white border-yellow-400'
+                                ? opt.color
                                 : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400',
                             ].join(' ')}
                           >

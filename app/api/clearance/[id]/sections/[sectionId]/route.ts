@@ -24,7 +24,11 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
   const user = req.user!
   const { id: clearanceId, sectionId } = context.params as { id: string; sectionId: string }
 
-  let body: { action?: string; note?: string }
+  let body: {
+    action?: string
+    note?: string
+    items?: Array<{ id: string; status?: string; comments?: string }>
+  }
   try {
     body = await req.json()
   } catch {
@@ -99,6 +103,32 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
     const now = nowPKT()
 
     if (body.action === 'APPROVE') {
+      // Save individual item statuses and comments from the form
+      if (Array.isArray(body.items) && body.items.length > 0) {
+        await Promise.all(
+          body.items.map((item) => {
+            const allowedStatuses = ['APPROVED', 'NA', 'PENDING']
+            const status = item.status && allowedStatuses.includes(item.status) ? item.status : undefined
+            return prisma.clearanceItem.updateMany({
+              where: { id: item.id, clearance_section_id: sectionId },
+              data: {
+                ...(status ? { status } : {}),
+                ...(item.comments !== undefined ? { comments: item.comments } : {}),
+                ...(status === 'APPROVED' || status === 'NA'
+                  ? { approver_id: user.id, approver_name: user.full_name, decision_at: now }
+                  : {}),
+              },
+            })
+          })
+        )
+      }
+
+      // Approve any items still PENDING (not explicitly set by the form)
+      await prisma.clearanceItem.updateMany({
+        where: { clearance_section_id: sectionId, status: 'PENDING' },
+        data: { status: 'APPROVED', approver_id: user.id, approver_name: user.full_name, decision_at: now },
+      })
+
       // Update section to APPROVED
       await prisma.clearanceSection.update({
         where: { id: sectionId },
@@ -109,15 +139,6 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
           decision_at: now,
           note: body.note ?? null,
         },
-      })
-
-      // Approve all still-PENDING items in this section
-      await prisma.clearanceItem.updateMany({
-        where: {
-          clearance_section_id: sectionId,
-          status: 'PENDING',
-        },
-        data: { status: 'APPROVED' },
       })
 
       // Activity log
@@ -158,6 +179,23 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       }
 
     } else {
+      // Save item statuses/comments before denying
+      if (Array.isArray(body.items) && body.items.length > 0) {
+        await Promise.all(
+          body.items.map((item) => {
+            const allowedStatuses = ['APPROVED', 'NA', 'PENDING']
+            const status = item.status && allowedStatuses.includes(item.status) ? item.status : undefined
+            return prisma.clearanceItem.updateMany({
+              where: { id: item.id, clearance_section_id: sectionId },
+              data: {
+                ...(status ? { status } : {}),
+                ...(item.comments !== undefined ? { comments: item.comments } : {}),
+              },
+            })
+          })
+        )
+      }
+
       // DENY
       await prisma.clearanceSection.update({
         where: { id: sectionId },

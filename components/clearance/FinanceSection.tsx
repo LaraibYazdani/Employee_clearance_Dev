@@ -22,6 +22,7 @@ interface FinanceSectionProps {
   entries: FinanceEntry[]
   isApprover: boolean
   sectionStatus: string
+  onActionComplete?: () => void
 }
 
 interface LocalEntry extends FinanceEntry {
@@ -33,6 +34,7 @@ export default function FinanceSection({
   entries,
   isApprover,
   sectionStatus,
+  onActionComplete,
 }: FinanceSectionProps) {
   const { token } = useAuth()
 
@@ -112,12 +114,13 @@ export default function FinanceSection({
         const data = await res.json()
         throw new Error(data.message ?? 'Approval failed')
       }
+      onActionComplete?.()
     } catch (err: unknown) {
       setApproveError(err instanceof Error ? err.message : 'Approval failed')
     } finally {
       setApproving(false)
     }
-  }, [token, clearanceId, localEntries])
+  }, [token, clearanceId, localEntries, onActionComplete])
 
   const grouped = GROUP_ORDER.reduce<Record<GroupKey, LocalEntry[]>>(
     (acc, key) => {

@@ -1,0 +1,329 @@
+{
+  "info": {
+    "_postman_id": "6b702fa4-3f2d-43ea-bfe9-a9f0e87040a7",
+    "name": "SF APIs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "52928344",
+    "_collection_link": "https://go.postman.co/collection/52928344-6b702fa4-3f2d-43ea-bfe9-a9f0e87040a7?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "SF Login API",
+      "request": {
+        "auth": {
+          "type": "basic",
+          "basic": [
+            {
+              "key": "password",
+              "value": "SK@nS1234567",
+              "type": "string"
+            },
+            {
+              "key": "username",
+              "value": "20009595@packagesli",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://api44.sapsf.com/odata/v2/Background_Community?$top=20",
+          "protocol": "https",
+          "host": [
+            "api44",
+            "sapsf",
+            "com"
+          ],
+          "path": [
+            "odata",
+            "v2",
+            "Background_Community"
+          ],
+          "query": [
+            {
+              "key": "$top",
+              "value": "20"
+            }
+          ]
+        },
+        "description": "## SF Login API — Background_Community\n\nThis request fetches records from the **Background_Community** entity using the **SAP SuccessFactors OData v2 API**. It retrieves a paginated list of community background entries associated with employee profiles in the SuccessFactors platform.\n\n---\n\n### Authentication\n\nThis request uses **Basic Authentication**. Provide your SuccessFactors username and password in the Authorization header.\n\n| Field    | Value                        |\n|----------|------------------------------|\n| Type     | Basic Auth                   |\n| Username | Your SuccessFactors username |\n| Password | Your SuccessFactors password |\n\n---\n\n### Endpoint\n\n```\nGET https://api44.sapsf.com/odata/v2/Background_Community\n```\n\n---\n\n### Query Parameters\n\n| Parameter | Type    | Required | Description                                              |\n|-----------|---------|----------|----------------------------------------------------------|\n| `$top`    | integer | No       | Limits the number of records returned. Default is `20`. |\n\n**Example:**\n```\n?$top=20\n```\n\n---\n\n### Example Response\n\nThe API returns an **Atom/XML feed** in the following format:\n\n```xml\n<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n<feed xmlns=\"http://www.w3.org/2005/Atom\"\n      xmlns:m=\"http://schemas.microsoft.com/ado/2007/08/dataservices/metadata\"\n      xmlns:d=\"http://schemas.microsoft.com/ado/2007/08/dataservices\"\n      xml:base=\"https://api44.sapsf.com/odata/v2/\">\n  <title type=\"text\">Background_Community</title>\n  <id>https://api44.sapsf.com/odata/v2/Background_Community</id>\n  <updated>2026-03-27T12:10:44Z</updated>\n  <link rel=\"self\" title=\"Background_Community\" href=\"Background_Community\" />\n  <!-- entry elements with community background records -->\n</feed>\n```\n\n- **Content-Type:** `application/atom+xml`\n- **Status Code:** `200 OK` on success"
+      },
+      "response": []
+    },
+    {
+      "name": "Generate SAML",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "user_id",
+              "value": "ECAdmin",
+              "type": "text"
+            },
+            {
+              "key": "token_url",
+              "value": "https://api44.sapsf.com/oauth/token",
+              "type": "text"
+            },
+            {
+              "key": "private_key",
+              "value": "TUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dTakFnRUFBb0lCQVFEaU1RbUpZOFJwa1MwVnlrbzg4ckpMQm9ZaHhCUU5HNWs4Q0RId2J6SkZFT1BNLzJndEJSd1liL3czbGJkM2RHRXRUajg0WEZQZ05PZTJaeVhETHlDWW1rTEVmcWhHS0VKb1hqSVV6enhiUHpoNHN2ZDFPVjMvTEl2M25ZR1BUeEZYamdJT213T0piS1gyUFY0eENad1NzWGtwVEJwcFRTN0o4Vk11RnIwL2FLZFlMY2lYSjEzV0tlRjlJZXVhWHlGRW1HNjh5bmdzK25FWDNWZWVnRW1vQi95cmhMbmlhM2t6cEc4U2hlS2JnSU9NUU81MGR6YjEyRFY0NDNYN2hPNm1YbTYvMU54NlVhVUVzZ3VSQ24vTDM4RGtOcnd5OVR1M0xtcFBwQzNmS2VEbExDamVFN0FkQWMvU2l0TWRuWThqbko0Q1lqeW1selZxNVJneHFBY0JBZ01CQUFFQ2dnRUFUTTBpdEZROFVpMzVsWDhBMHc0RERPZHpyczVoa292TzdXdkk3UjhNZmhmOGlWUWxucmV2OFBwQk5PeHdoYTV0K3BDcGRhMGZ5NjZiQ0x1Z1BsUm5xSGtrZDR5Yi9XcFpGZy81eUVnUGNkb1hCaUNhVm1LNnNGU0RWL25Tam9MbDNBazdXSk00MGJZaTZlZXZiazRaZ04xaXl1dHN3bGx6TEIxMVJWNXlOcTlpUXE0SVhDSkxuRVQ4ZGdWVWladUo4OUxUeFlMUFBBcWROL0ZueDNkb2k4cmhjc05kUVlTT1FMSUoybHpPVFNhWjJWQmM3eHNRTjNVZFJnTHlCWkZLSGNnUTUzRjhaVy9aOUwwVHRRZjJXWjVUSnhwM1F3V25zREE2c1NncTRTSEYrQ0c3M3paQzc4eXRtUm5NMXk5SnVoRmViOUhUb3hFNE1nQjVPTWFjMndLQmdRRDJEb1UxenBVY29DY0ZVdU1RRUNobDJxV0hGS1hDaDNNazM5NnRMUzNFN29uWGRvL25Vb3huNVJQaHpwNk52VVRLcGNUL0JwRStjNVBVZ3M5NEphcFRJeWJha09yQnlmZ1NHRit1TUROWWdnbXRMYkNOZkZZTG90TWlwZGlxQWpQT2ZWdWZxMjk2REk2OFdOemRVbml4ak5SZ3F0SkJTMUpmUDZSNGRtR2hzd0tCZ1FEclZRS0g3dGdyWVhxcDFXRnFlR2owR2w3R0xPS1haRlhTQk9XYldEOGEwYmRJMkhtb0wrcDdoM2tqMUVsdXliQU1Xb3NHcmcxZWpVNjAvTVZtUEtvZFdBUXA4OFFvdVp1bjcwdVQ3TCtUcEJkbXRMMVhiV1JhTG5BVXhQbStxM2ZGUDBKdk9MK3JtUFZoaU9JNEhidHBoZ1R2dHVWUFdGWkJ3cmRveHp4U2V3S0JnUURPN205QlRUZENGNzQ1VC9mOTdsakxNQks5ZzdQVDRhNEllTzRBbmxvN29KRDBUNVcrYVVJRHJqZ0dVNG9za2R4a3dQem5yVkpCUDFvNEFyc1F4RHgySnIzcVdxM1R4Rk9JaEU4VFl4NExkWEZGMzRMM3VuVnkyOEROQnNVc1ZTWFVwc0NEaTkzNHVzN2Z2NndmeGRnVEdla1NVeGI0S3F4Znhsby9wTzkrMlFLQmdBOFUyNXlxaWQvOTEwYWJEaXNzbkUxSWcxcGY5Z1dOd0pJOURobnVoZHpLSTl6ZlFxeXNwWEpWTkVZL2pKVTFCN3RDOGpYellaZjFwbDJpOVdPZjc2Y0J4UUtMUkw3M1ppcFZBNXJ2U1RmRkJGcm9xbG00QVA1bWkzaEpSMWdZMVF3bkNiTG5DQ0dQSStxa1F4c2xqS1V1bVpKalBqN2ZnbWVrZXV5VUdDR1JBb0dBZWlsOEpSanRsZ1ljVG1Xd0w5RitrUFJDMmtXRVNmUFpKclZuOWkxZXdxa1QyYTYraG9OUnVGUHBpWTd1K1dPckJOcjJnUitYVytncmtUQVVCSUZXTEZReEk1Q0VrVkd0WUEySzQ4Zk9VSmxxRVZUQzM2SGNCcEFhc3hURjZTR21JTUkvVThENTBHNGdVNmJqN1NrZ05DS0hpam96eVcxK3IxMVdOeWFYV3kwPSMjI3BhY2thZ2VzbGk=",
+              "type": "text"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/x-www-form-urlencoded",
+              "type": "text"
+            },
+            {
+              "key": "client_id",
+              "value": "NmEwYWE4MDJmYmVlMjg2NGVhNzhjYzcwOWY2OA",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://api44.sapsf.com/oauth/idp",
+          "protocol": "https",
+          "host": [
+            "api44",
+            "sapsf",
+            "com"
+          ],
+          "path": [
+            "oauth",
+            "idp"
+          ]
+        },
+        "description": "## Generate SAML Assertion\n\nGenerates a signed **SAML 2.0 assertion** for use in the SAP SuccessFactors **OAuth 2.0 SAML Bearer flow**. The assertion is cryptographically signed using an RSA private key and is intended to be exchanged for an OAuth access token via the [Generate Access Token](request/52928344-fac8018d-ac0c-4535-9e5f-d7e0e1a6de2b) request.\n\n---\n\n### Endpoint\n\n| Method | URL |\n|--------|-----|\n| `POST` | `https://api44.sapsf.com/oauth/idp` |\n\n---\n\n### Request Body\n\nSent as `application/x-www-form-urlencoded`.\n\n| Parameter | Value | Description |\n|-----------|-------|-------------|\n| `user_id` | `ECAdmin` | The SAP SuccessFactors user ID on whose behalf the SAML assertion is generated. |\n| `token_url` | `https://api44.sapsf.com/oauth/token` | The OAuth token endpoint URL referenced within the SAML assertion. |\n| `private_key` | `<RSA private key in base64>` | The RSA private key (base64-encoded) used to sign the SAML assertion. |\n| `client_id` | `NmEwYWE4MDJmYmVlMjg2NGVhNzhjYzcwOWY2OA` | The OAuth client ID (API key) registered in SAP SuccessFactors. |\n| `Content-Type` | `application/x-www-form-urlencoded` | Content type sent as a body parameter. |\n\n---\n\n### Response\n\n**Status:** `200 OK`  \n**Format:** XML\n\nReturns a signed **SAML 2.0 assertion** XML document. This assertion must be passed as input to the **Generate Access Token** request to obtain an OAuth bearer token for authenticating subsequent API calls.\n\n---\n\n### Next Step\n\nUse the SAML assertion returned by this request as the `assertion` parameter in the [Generate Access Token](request/52928344-fac8018d-ac0c-4535-9e5f-d7e0e1a6de2b) request to complete the OAuth 2.0 SAML Bearer flow."
+      },
+      "response": []
+    },
+    {
+      "name": "Generate Access Token",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "client_id",
+              "value": "NmEwYWE4MDJmYmVlMjg2NGVhNzhjYzcwOWY2OA",
+              "type": "text"
+            },
+            {
+              "key": "grant_type",
+              "value": "urn:ietf:params:oauth:grant-type:saml2-bearer",
+              "type": "text"
+            },
+            {
+              "key": "company_id",
+              "value": "packagesli",
+              "type": "text"
+            },
+            {
+              "key": "assertion",
+              "value": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48c2FtbDI6QXNzZXJ0aW9uIHhtbG5zOnNhbWwyPSJ1cm46b2FzaXM6bmFtZXM6dGM6U0FNTDoyLjA6YXNzZXJ0aW9uIiBJRD0iOWU2MWJiYjItMDgzYy00YzIzLThiODYtNGI4ZjJlYmI1Y2Y4IiBJc3N1ZUluc3RhbnQ9IjIwMjUtMDgtMjBUMTI6MjY6MzQuNjkxWiIgVmVyc2lvbj0iMi4wIiB4bWxuczp4cz0iaHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEiIHhtbG5zOnhzaT0iaHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEtaW5zdGFuY2UiPjxzYW1sMjpJc3N1ZXI+d3d3LnN1Y2Nlc3NmYWN0b3JzLmNvbS9vYXV0aC9pZHA8L3NhbWwyOklzc3Vlcj48ZHM6U2lnbmF0dXJlIHhtbG5zOmRzPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwLzA5L3htbGRzaWcjIj4KPGRzOlNpZ25lZEluZm8geG1sbnM6ZHM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvMDkveG1sZHNpZyMiPgo8ZHM6Q2Fub25pY2FsaXphdGlvbk1ldGhvZCBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMTAveG1sLWV4Yy1jMTRuIyIgeG1sbnM6ZHM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvMDkveG1sZHNpZyMiLz4KPGRzOlNpZ25hdHVyZU1ldGhvZCBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMDQveG1sZHNpZy1tb3JlI3JzYS1zaGEyNTYiIHhtbG5zOmRzPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwLzA5L3htbGRzaWcjIi8+CjxkczpSZWZlcmVuY2UgVVJJPSIjOWU2MWJiYjItMDgzYy00YzIzLThiODYtNGI4ZjJlYmI1Y2Y4IiB4bWxuczpkcz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnIyI+CjxkczpUcmFuc2Zvcm1zIHhtbG5zOmRzPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwLzA5L3htbGRzaWcjIj4KPGRzOlRyYW5zZm9ybSBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvMDkveG1sZHNpZyNlbnZlbG9wZWQtc2lnbmF0dXJlIiB4bWxuczpkcz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnIyIvPgo8ZHM6VHJhbnNmb3JtIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMS8xMC94bWwtZXhjLWMxNG4jIiB4bWxuczpkcz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnIyI+PGVjOkluY2x1c2l2ZU5hbWVzcGFjZXMgeG1sbnM6ZWM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMTAveG1sLWV4Yy1jMTRuIyIgUHJlZml4TGlzdD0ieHMiLz48L2RzOlRyYW5zZm9ybT4KPC9kczpUcmFuc2Zvcm1zPgo8ZHM6RGlnZXN0TWV0aG9kIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnI3NoYTEiIHhtbG5zOmRzPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwLzA5L3htbGRzaWcjIi8+CjxkczpEaWdlc3RWYWx1ZSB4bWxuczpkcz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnIyI+YVVYc3dQd1V1b2M3dGNyTVpSaFphanJZL2Y4PTwvZHM6RGlnZXN0VmFsdWU+CjwvZHM6UmVmZXJlbmNlPgo8L2RzOlNpZ25lZEluZm8+CjxkczpTaWduYXR1cmVWYWx1ZSB4bWxuczpkcz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnIyI+CmlBNUV0OW50eVpWN2VUSllHaUYrTWU5OUJCSGwzN0dNQ3hPL2lkRGdvajhyUytoZWNzaS9OZmM0Z3Z5eHFTSVhlMTlVNDRrRzRTV0UKc3JoanVTdmM1KzRrSUFxcFZqdW5YV08xOXoxczZXOGt0dlBhK1JFSytjZ2JwU2tOM05XR2dGa21McEUxTWdLWXVwcXFCajd1SEhiYgpBaGw2dnNaSWdXWm9Td0M0QnVGQ0kxcjYvTlRCamN2dVNNQjNEL1BrTFQrZUZWYUZmcU93WXk3YkMzU1NiWUFUeWRRR1kzSDdTNVBjCjk0YlNwSDZtR1V6REJFc0haVWRvbXF6SmprQnJGQmxmb081ZnFmMk9PZDlUOWxDak1CRGFzbnJHenNSUHpIUVoycFJkMW0yUFdHVkwKRE5qSFlLMWY5NVZHeDQwbGFabjRqeUdYQ09MVmFZR25ESVdMYWc9PQo8L2RzOlNpZ25hdHVyZVZhbHVlPgo8ZHM6S2V5SW5mbz48ZHM6WDUwOURhdGE+PGRzOlg1MDlDZXJ0aWZpY2F0ZT5NSUlDRFRDQ0FYYWdBd0lCQWdJRVRKajlMakFOQmdrcWhraUc5dzBCQVFVRkFEQkxNUXN3Q1FZRFZRUUdFd0pWVXpFYk1Ca0dBMVVFCkNoTVNVM1ZqWTJWemMyWmhZM1J2Y25NdVkyOXRNUXd3Q2dZRFZRUUxFd05QY0hNeEVUQVBCZ05WQkFNVENGTkdJRUZrYldsdU1CNFgKRFRFd01Ea3lNVEU0TkRVd01sb1hEVEkxTURreE9URTRORFV3TWxvd1N6RUxNQWtHQTFVRUJoTUNWVk14R3pBWkJnTlZCQW9URWxOMQpZMk5sYzNObVlXTjBiM0p6TG1OdmJURU1NQW9HQTFVRUN4TURUM0J6TVJFd0R3WURWUVFERXdoVFJpQkJaRzFwYmpDQm56QU5CZ2txCmhraUc5dzBCQVFFRkFBT0JqUUF3Z1lrQ2dZRUFyQTlSTE5uTDlQdDZ4eW5GZllmYThWWEFYRkRHOVk4eGtnczNsaElPbHNqcUVZd2IKU29naGlxSklKdmZZTTQ1a3gzYUI3WnJOOTZ0QVI1dVV1cEVzdS9HY1M2QUN4aGZydVcrQlk2dXc4djYvdzJ2WGhCZGZGakJvTytLZQpMeDRrM2xsbGVWZ0tzbU5sZjgxb2tPWHYxcmVlOHdFcmZaM3Nzbk54a3VRZ0dCMENBd0VBQVRBTkJna3Foa2lHOXcwQkFRVUZBQU9CCmdRQmVCQ1NNRm5ZOFRCNmp0V29TUC9sb3JCdWRocHRndk83LzNyK2wvUUswaGRrNkNWditWUW1TaWxOUGdXVmdVOWt0WkdiTmtaaHcKSWd3bnFJUUhBaTY2MzF1ZmtZUUpCKzQ4WVVlMXEvcHY2RVdhZUl3R3ZjR1lTWFpwL0UvYUdaUHRjZVRJWEZQZnFPeUhRb0Z0YjBucQpNTUZXb0RocFhVSG1scm95VGM5c0pnPT08L2RzOlg1MDlDZXJ0aWZpY2F0ZT48L2RzOlg1MDlEYXRhPjwvZHM6S2V5SW5mbz48L2RzOlNpZ25hdHVyZT48c2FtbDI6U3ViamVjdD48c2FtbDI6TmFtZUlEIEZvcm1hdD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6MS4xOm5hbWVpZC1mb3JtYXQ6dW5zcGVjaWZpZWQiPkVDQWRtaW48L3NhbWwyOk5hbWVJRD48c2FtbDI6U3ViamVjdENvbmZpcm1hdGlvbiBNZXRob2Q9InVybjpvYXNpczpuYW1lczp0YzpTQU1MOjIuMDpjbTpiZWFyZXIiPjxzYW1sMjpTdWJqZWN0Q29uZmlybWF0aW9uRGF0YSBOb3RPbk9yQWZ0ZXI9IjIwMjUtMDgtMjBUMTI6MzY6MzQuNjkxWiIgUmVjaXBpZW50PSJodHRwczovL2FwaTQ0LnNhcHNmLmNvbS9vYXV0aC90b2tlbiIvPjwvc2FtbDI6U3ViamVjdENvbmZpcm1hdGlvbj48L3NhbWwyOlN1YmplY3Q+PHNhbWwyOkNvbmRpdGlvbnMgTm90QmVmb3JlPSIyMDI1LTA4LTIwVDEyOjE2OjM0LjY5MVoiIE5vdE9uT3JBZnRlcj0iMjAyNS0wOC0yMFQxMjozNjozNC42OTFaIj48c2FtbDI6QXVkaWVuY2VSZXN0cmljdGlvbj48c2FtbDI6QXVkaWVuY2U+d3d3LnN1Y2Nlc3NmYWN0b3JzLmNvbTwvc2FtbDI6QXVkaWVuY2U+PC9zYW1sMjpBdWRpZW5jZVJlc3RyaWN0aW9uPjwvc2FtbDI6Q29uZGl0aW9ucz48c2FtbDI6QXV0aG5TdGF0ZW1lbnQgQXV0aG5JbnN0YW50PSIyMDI1LTA4LTIwVDEyOjI2OjM0LjY5MVoiIFNlc3Npb25JbmRleD0iNTljYTI1NDMtNmFiMC00ODk1LWJhNjMtMjRkODhhNzRhYzYyIj48c2FtbDI6QXV0aG5Db250ZXh0PjxzYW1sMjpBdXRobkNvbnRleHRDbGFzc1JlZj51cm46b2FzaXM6bmFtZXM6dGM6U0FNTDoyLjA6YWM6Y2xhc3NlczpQYXNzd29yZFByb3RlY3RlZFRyYW5zcG9ydDwvc2FtbDI6QXV0aG5Db250ZXh0Q2xhc3NSZWY+PC9zYW1sMjpBdXRobkNvbnRleHQ+PC9zYW1sMjpBdXRoblN0YXRlbWVudD48c2FtbDI6QXR0cmlidXRlU3RhdGVtZW50PjxzYW1sMjpBdHRyaWJ1dGUgTmFtZT0iYXBpX2tleSI+PHNhbWwyOkF0dHJpYnV0ZVZhbHVlIHhzaTp0eXBlPSJ4czpzdHJpbmciPk5tRXdZV0U0TURKbVltVmxNamcyTkdWaE56aGpZemN3T1dZMk9BPC9zYW1sMjpBdHRyaWJ1dGVWYWx1ZT48L3NhbWwyOkF0dHJpYnV0ZT48L3NhbWwyOkF0dHJpYnV0ZVN0YXRlbWVudD48L3NhbWwyOkFzc2VydGlvbj4=",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://api44.sapsf.com/oauth/token",
+          "protocol": "https",
+          "host": [
+            "api44",
+            "sapsf",
+            "com"
+          ],
+          "path": [
+            "oauth",
+            "token"
+          ]
+        },
+        "description": "## Generate Access Token\n\nExchanges a SAML 2.0 Bearer Assertion for an OAuth 2.0 access token using the SAP SuccessFactors OAuth token endpoint. This is part of the SAML Bearer Assertion Flow, where a pre-generated SAML assertion is used to authenticate and obtain a short-lived Bearer token for subsequent API calls.\n\n---\n\n### Endpoint\n\n`POST https://api44.sapsf.com/oauth/token`\n\n---\n\n### Request Body\n\nSent as `application/x-www-form-urlencoded`.\n\n| Parameter | Required | Description |\n|---|---|---|\n| `client_id` | Yes | The OAuth client (API key) registered in SAP SuccessFactors. |\n| `grant_type` | Yes | Must be `urn:ietf:params:oauth:grant-type:saml2-bearer` to use the SAML Bearer flow. |\n| `company_id` | Yes | The SAP SuccessFactors company/tenant ID (e.g., `packagesli`). |\n| `assertion` | Yes | A Base64-encoded, signed SAML 2.0 assertion. This assertion must be generated beforehand (e.g., via the **Generate SAML** request) and is time-limited. |\n\n---\n\n### Response\n\nOn success, returns a JSON object with the following fields:\n\n| Field | Type | Description |\n|---|---|---|\n| `access_token` | string | The Bearer token to use in the `Authorization` header for subsequent API requests. |\n| `token_type` | string | Always `Bearer`. |\n| `expires_in` | integer | Token validity in seconds from the time of issuance. |\n\n**Example Response:**\n```json\n{\n  \"access_token\": \"eyJ0b2tlbkNvbnRlbnQi...\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 5958\n}\n```\n\n---\n\n### Usage\n\nUse the returned `access_token` as a Bearer token in the `Authorization` header for all subsequent SAP SuccessFactors API requests:\n\n```\nAuthorization: Bearer <access_token>\n```\n\n---\n\n### Notes\n\n- The SAML assertion (`assertion` field) is time-sensitive and typically valid for only a few minutes. Regenerate it using the **Generate SAML** request if it has expired.\n- The `expires_in` value indicates remaining token lifetime in seconds at the time of issuance.\n- This endpoint is specific to the `api44` data center. Adjust the subdomain (e.g., `api45`, `api46`) to match your company's assigned SAP SuccessFactors data center."
+      },
+      "response": []
+    },
+    {
+      "name": "EmpJob Copy",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJ0b2tlbkNvbnRlbnQiOnsiYXBpS2V5IjoiTm1Fd1lXRTRNREptWW1WbE1qZzJOR1ZoTnpoall6Y3dPV1kyT0EiLCJzZlByaW5jaXBsZSI6IkVDQWRtaW4jRElWX1RFQ0gjcGFja2FnZXNsaSIsImlzc3VlZEZvciI6IkVDUCIsInNjb3BlIjoiIiwiaXNzdWVkQXQiOjE3NzAwMTU3NDk1MzcsImV4cGlyZXNBdCI6MTc3MDEwMjE0OTUzN30sInNpZ25hdHVyZSI6IkY4NUV5NVJ3UEdmYU9IaGRGeVQ4cCtoOWpKT2pQTkozaUlxdHVmbnZuRVllZGdQWVMwSkg1MkxBanZpZFJOTnljeEdOZFoyMUJTenVZeG53bVh0ZThQL1hjU0FBcUZJK0FJaWFoRXkvT1ZGL0xEaEZQdlJoaU5JNGhmVVhhYVVSeWE0QXFBTnlUelE1U25zUnJhUXIrV3VoZkVVQXlIWnpaZ1JGMjJUTkhVVT0ifQ==",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://api44.sapsf.com/odata/v2/EmpJob?$filter=userId eq '10009729'&$select=userId,payGrade,jobTitle,businessUnit,company&$format=json",
+          "protocol": "https",
+          "host": [
+            "api44",
+            "sapsf",
+            "com"
+          ],
+          "path": [
+            "odata",
+            "v2",
+            "EmpJob"
+          ],
+          "query": [
+            {
+              "key": "$filter",
+              "value": "userId eq '10009729'"
+            },
+            {
+              "key": "$select",
+              "value": "userId,payGrade,jobTitle,businessUnit,company"
+            },
+            {
+              "key": "$format",
+              "value": "json"
+            }
+          ]
+        },
+        "description": "## Overview\n\nThis endpoint retrieves employee job information from the **SAP SuccessFactors OData v2 API** for a specific user. It returns detailed job-related data such as job title, pay grade, business unit, employment status, cost center, and more.\n\n## Endpoint\n\n```\nGET https://api44.sapsf.com/odata/v2/EmpJob\n```\n\n## Query Parameters\n\n| Parameter | Required | Description |\n|-----------|----------|-------------|\n| `$filter` | Yes | Filters results by `userId`. Example: `userId eq '10009700'` |\n| `$select` | No | Comma-separated list of fields to return. Example: `userId,payGrade,jobTitle,businessUnit,company` |\n| `$format` | Yes | Response format. Use `json` for JSON output. |\n\n## Key Response Fields\n\nThe response is returned under `d.results[]`. Notable fields include:\n\n| Field | Description |\n|-------|-------------|\n| `userId` | Unique identifier of the employee |\n| `jobCode` | Code representing the employee's job role |\n| `localJobTitle` | Job title of the employee |\n| `payGrade` | Pay grade assigned to the employee |\n| `businessUnit` | Business unit the employee belongs to |\n| `company` | Company code |\n| `emplStatus` | Employment status code |\n| `employeeClass` | Classification of the employee |\n| `costCenter` | Cost center associated with the employee |\n| `location` | Work location code |\n| `managerId` | User ID of the employee's manager |\n| `startDate` | Job start date (in OData `/Date(milliseconds)/` format) |\n| `endDate` | Job end date (in OData `/Date(milliseconds)/` format) |\n| `contractType` | Type of employment contract |\n| `workscheduleCode` | Work schedule assigned to the employee |\n| `countryOfCompany` | Country code of the employing company |\n\n## Authentication\n\nThis API requires **OAuth 2.0 Bearer token** authentication. The token must be obtained via the **SAML Bearer assertion flow** and passed in the `Authorization` header:\n\n```\nAuthorization: Bearer <access_token>\n```\n\n## Notes\n\n- Date fields (e.g., `startDate`, `endDate`, `createdDateTime`) are returned in OData `/Date(milliseconds)/` format, where the value represents Unix time in milliseconds. Convert to a readable date as needed.\n- Use `$select` to limit the fields returned and reduce response payload size."
+      },
+      "response": []
+    },
+    {
+      "name": "User Copy",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJ0b2tlbkNvbnRlbnQiOnsiYXBpS2V5IjoiTm1Fd1lXRTRNREptWW1WbE1qZzJOR1ZoTnpoall6Y3dPV1kyT0EiLCJzZlByaW5jaXBsZSI6IkVDQWRtaW4jRElWX1RFQ0gjcGFja2FnZXNsaSIsImlzc3VlZEZvciI6IkVDUCIsInNjb3BlIjoiIiwiaXNzdWVkQXQiOjE3NzAwMTU3NDk1MzcsImV4cGlyZXNBdCI6MTc3MDEwMjE0OTUzN30sInNpZ25hdHVyZSI6IkY4NUV5NVJ3UEdmYU9IaGRGeVQ4cCtoOWpKT2pQTkozaUlxdHVmbnZuRVllZGdQWVMwSkg1MkxBanZpZFJOTnljeEdOZFoyMUJTenVZeG53bVh0ZThQL1hjU0FBcUZJK0FJaWFoRXkvT1ZGL0xEaEZQdlJoaU5JNGhmVVhhYVVSeWE0QXFBTnlUelE1U25zUnJhUXIrV3VoZkVVQXlIWnpaZ1JGMjJUTkhVVT0ifQ==",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://api44.sapsf.com/odata/v2/User?$filter=userId eq '10009729' and status in 't'&$format=json",
+          "protocol": "https",
+          "host": [
+            "api44",
+            "sapsf",
+            "com"
+          ],
+          "path": [
+            "odata",
+            "v2",
+            "User"
+          ],
+          "query": [
+            {
+              "key": "$filter",
+              "value": "userId eq '10009729' and status in 't'"
+            },
+            {
+              "key": "$format",
+              "value": "json"
+            }
+          ]
+        },
+        "description": "## Overview\n\nThis endpoint retrieves user profile information from the **SAP SuccessFactors OData v2 API** for a specific employee. It returns personal and employment-related data such as display name, job title, pay grade, hire date, employment status, and other attributes associated with the `User` entity in SAP SuccessFactors.\n\n## Endpoint\n\n```\nGET https://api44.sapsf.com/odata/v2/User\n```\n\n## Query Parameters\n\n| Parameter | Required | Description |\n|-----------|----------|-------------|\n| `$filter` | Yes | Filters results by `userId` and/or `status`. Example: `userId eq '10009673' and status in 't'` |\n| `$format` | Yes | Response format. Use `json` for JSON output. |\n\n## Key Response Fields\n\n| Field | Description |\n|-------|-------------|\n| `userId` | The unique employee ID in SAP SuccessFactors. |\n| `displayName` | The employee's full display name. |\n| `firstName` | Employee's first name. |\n| `lastName` | Employee's last name. |\n| `salutation` | Salutation/title prefix (e.g., `MR`, `MS`). |\n| `email` | Employee's work email address. |\n| `title` | Job title of the employee. |\n| `payGrade` | Pay grade classification assigned to the employee. |\n| `employeeClass` | Employment classification (e.g., `Contractual`, `Regular`). |\n| `hireDate` | Date the employee was hired, in OData `/Date(milliseconds)/` format. |\n| `status` | Employment status code. See **Notes** for possible values. |\n| `gender` | Gender of the employee (`M` or `F`). |\n| `country` | Country of the employee's work location. |\n| `location` | Specific work location or region. |\n| `division` | Division the employee belongs to. |\n| `timeZone` | Employee's configured time zone (e.g., `Asia/Karachi`). |\n| `defaultLocale` | Default locale setting (e.g., `en_US`). |\n| `dateOfBirth` | Employee's date of birth, in OData `/Date(milliseconds)/` format. |\n| `assignmentUUID` | Unique identifier for the employee's assignment record. |\n| `isAlumni` | Boolean indicating whether the employee is an alumni. |\n| `username` | Login username, typically the same as `userId`. |\n\n## Authentication\n\nThis API requires **OAuth 2.0 Bearer token** authentication. The token must be included in the `Authorization` header of every request:\n\n```\nAuthorization: Bearer {{accessToken}}\n```\n\nRefer to the collection-level authentication configuration for token generation details. Use the **Generate Access Token** request in this collection to obtain a valid token before calling this endpoint.\n\n## Notes\n\n- The `userId` parameter corresponds to the **employee ID** in SAP SuccessFactors. Update the `$filter` value to query a different employee.\n- The `status` field uses single-character codes to represent employment status:\n  - `'t'` — **Terminated** employees\n  - `'a'` — **Active** employees\n- Dates (e.g., `hireDate`, `dateOfBirth`, `lastModifiedDateTime`) are returned in OData `/Date(milliseconds+offset)/` format. Convert the millisecond timestamp to a human-readable date as needed.\n- This request targets the `api44` instance of SAP SuccessFactors. Ensure the correct instance URL is used for your environment (e.g., `api4`, `api8`, `api44`).\n- The response follows the standard OData v2 envelope: `{ \"d\": { \"results\": [ ... ] } }`. An empty `results` array indicates no matching records were found for the given filter."
+      },
+      "response": []
+    },
+    {
+      "name": "Get HRBP",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJ0b2tlbkNvbnRlbnQiOnsiYXBpS2V5IjoiTm1Fd1lXRTRNREptWW1WbE1qZzJOR1ZoTnpoall6Y3dPV1kyT0EiLCJzZlByaW5jaXBsZSI6IkVDQWRtaW4jRElWX1RFQ0gjcGFja2FnZXNsaSIsImlzc3VlZEZvciI6IkVDUCIsInNjb3BlIjoiIiwiaXNzdWVkQXQiOjE3NzAwMTU3NDk1MzcsImV4cGlyZXNBdCI6MTc3MDEwMjE0OTUzN30sInNpZ25hdHVyZSI6IkY4NUV5NVJ3UEdmYU9IaGRGeVQ4cCtoOWpKT2pQTkozaUlxdHVmbnZuRVllZGdQWVMwSkg1MkxBanZpZFJOTnljeEdOZFoyMUJTenVZeG53bVh0ZThQL1hjU0FBcUZJK0FJaWFoRXkvT1ZGL0xEaEZQdlJoaU5JNGhmVVhhYVVSeWE0QXFBTnlUelE1U25zUnJhUXIrV3VoZkVVQXlIWnpaZ1JGMjJUTkhVVT0ifQ==",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://api44.sapsf.com/odata/v2/User?$filter=userId eq '10009729' and status in 't'&$format=json",
+          "protocol": "https",
+          "host": [
+            "api44",
+            "sapsf",
+            "com"
+          ],
+          "path": [
+            "odata",
+            "v2",
+            "User"
+          ],
+          "query": [
+            {
+              "key": "$filter",
+              "value": "userId eq '10009729' and status in 't'"
+            },
+            {
+              "key": "$format",
+              "value": "json"
+            }
+          ]
+        },
+        "description": "## Get HRBP\n\nRetrieves the HR Business Partner (HRBP) and other job relationship records for a specific user from the SAP SuccessFactors OData v2 API.\n\n### Endpoint\n\n`GET https://api44.sapsf.com/odata/v2/EmpJobRelationships`\n\n### Authentication\n\nUses Bearer Token authentication. Provide a valid token in the `Authorization` header:\n\n```\nAuthorization: Bearer <token>\n```\n\n### Query Parameters\n\n| Parameter | Value | Description |\n|-----------|-------|-------------|\n| `$filter` | `userId eq '10008590'` | Filters job relationship records by the specified user ID. |\n| `$format` | `json` | Specifies the response format as JSON. |\n\n### Key Fields\n\n| Field | Type | Description |\n|-------|------|-------------|\n| `userId` | String | The ID of the employee whose relationships are being queried. |\n| `relationshipType` | String | The type of relationship. `18570` indicates an **HR Business Partner (HRBP)**. |\n| `relUserId` | String | The user ID of the related person — for `relationshipType` `18570`, this is the **HRBP's user ID**. |\n| `startDate` | String (Date) | The start date of the relationship (OData date format). |\n| `endDate` | String (Date) | The end date of the relationship. |\n| `lastModifiedDateTime` | String (Date) | Last modified timestamp with timezone offset. |\n| `createdDateTime` | String (Date) | Creation timestamp with timezone offset. |\n| `createdBy` | String | User ID of the person who created the record. |\n| `lastModifiedBy` | String | User ID of the person who last modified the record. |\n\n### How to Identify the HRBP\n\nFilter the results for the record where `relationshipType` equals `18570`. The `relUserId` field on that record contains the **HRBP's user ID**.\n\n### Example Response\n\n```json\n{\n  \"d\": {\n    \"results\": [\n      {\n        \"relationshipType\": \"18570\",\n        \"userId\": \"10008590\",\n        \"relUserId\": \"20003534\",\n        \"startDate\": \"/Date(1735689600000)/\",\n        \"endDate\": \"/Date(253402214400000)/\",\n        \"lastModifiedDateTime\": \"/Date(1769516905000+0000)/\",\n        \"createdDateTime\": \"/Date(1769516905000+0000)/\",\n        \"createdBy\": \"10009711\",\n        \"lastModifiedBy\": \"10009711\"\n      }\n    ]\n  }\n}\n```\n\nIn this example, the HRBP for user `10008590` is the user with ID `20003534`."
+      },
+      "response": []
+    },
+    {
+      "name": "Photo",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJ0b2tlbkNvbnRlbnQiOnsiYXBpS2V5IjoiTm1Fd1lXRTRNREptWW1WbE1qZzJOR1ZoTnpoall6Y3dPV1kyT0EiLCJzZlByaW5jaXBsZSI6IkVDQWRtaW4jRElWX1RFQ0gjcGFja2FnZXNsaSIsImlzc3VlZEZvciI6IkVDUCIsInNjb3BlIjoiIiwiaXNzdWVkQXQiOjE3NzAwMTU3NDk1MzcsImV4cGlyZXNBdCI6MTc3MDEwMjE0OTUzN30sInNpZ25hdHVyZSI6IkY4NUV5NVJ3UEdmYU9IaGRGeVQ4cCtoOWpKT2pQTkozaUlxdHVmbnZuRVllZGdQWVMwSkg1MkxBanZpZFJOTnljeEdOZFoyMUJTenVZeG53bVh0ZThQL1hjU0FBcUZJK0FJaWFoRXkvT1ZGL0xEaEZQdlJoaU5JNGhmVVhhYVVSeWE0QXFBTnlUelE1U25zUnJhUXIrV3VoZkVVQXlIWnpaZ1JGMjJUTkhVVT0ifQ==",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://api44.sapsf.com/odata/v2/Photo?$filter=userId eq '50011444'&$format=json",
+          "protocol": "https",
+          "host": [
+            "api44",
+            "sapsf",
+            "com"
+          ],
+          "path": [
+            "odata",
+            "v2",
+            "Photo"
+          ],
+          "query": [
+            {
+              "key": "$filter",
+              "value": "userId eq '50011444'"
+            },
+            {
+              "key": "$format",
+              "value": "json"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

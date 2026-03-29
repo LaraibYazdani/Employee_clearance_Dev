@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { searchEmployees } from '@/lib/successfactors'
 
 // GET /api/users/search?q=<query>
 export const GET = withAuth(async (req: AuthenticatedRequest) => {
@@ -39,39 +38,6 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
     },
     take: 20,
   })
-
-  // Optionally augment with SF mock data
-  if (process.env.SF_MOCK_MODE === 'true') {
-    try {
-      const sfUsers = await searchEmployees(q)
-
-      // Merge: prefer DB records, add SF-only records as enrichment hints
-      const dbIds = new Set(dbUsers.map((u) => u.sf_employee_id))
-      const sfOnly = sfUsers
-        .filter((sf) => !dbIds.has(sf.sf_employee_id))
-        .map((sf) => ({
-          id: null,
-          sf_employee_id: sf.sf_employee_id,
-          full_name: sf.full_name,
-          email: sf.email,
-          grade: sf.grade,
-          designation: sf.designation,
-          department: sf.department,
-          division: sf.division,
-          company: sf.company,
-          roles: sf.roles,
-          hrbp_id: sf.hrbp_id ?? null,
-          line_manager_id: sf.line_manager_id ?? null,
-          created_at: null,
-          updated_at: null,
-          source: 'sf_only',
-        }))
-
-      return NextResponse.json([...dbUsers, ...sfOnly])
-    } catch {
-      // SF lookup failed — return DB results only
-    }
-  }
 
   return NextResponse.json(dbUsers)
 })

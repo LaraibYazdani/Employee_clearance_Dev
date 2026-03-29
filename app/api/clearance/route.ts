@@ -139,13 +139,37 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
 
+    // Enforce: HRBP can only initiate clearance for employees assigned to them in SF
+    // SUPER_ADMIN bypasses this restriction
+    if (!user.roles.includes('SUPER_ADMIN')) {
+      if (!employee.hrbp_id) {
+        return NextResponse.json(
+          {
+            error: 'Forbidden',
+            message: `${employee.full_name} does not have an HRBP assigned in the system. They may need to log in once so their SuccessFactors data can sync.`,
+          },
+          { status: 403 }
+        )
+      }
+      if (employee.hrbp_id !== user.id) {
+        return NextResponse.json(
+          {
+            error: 'Forbidden',
+            message: `You are not the assigned HRBP for ${employee.full_name}. Only their designated HRBP can initiate a clearance.`,
+          },
+          { status: 403 }
+        )
+      }
+    }
+
+    const companyCode = employee.company_code ?? null
     const now = nowPKT()
 
     // Build section data for all Section 2 keys
     const sectionCreateData: any[] = []
 
     for (const sectionKey of SECTION_2_KEYS) {
-      const approverId = await findApproverForSection(sectionKey, body.employeeId)
+      const approverId = await findApproverForSection(sectionKey, body.employeeId, companyCode)
       let approverName: string | null = null
 
       if (approverId) {
@@ -175,7 +199,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
 
     // Build section data for all Section 3 keys (LOCKED initially)
     for (const sectionKey of SECTION_3_KEYS) {
-      const approverId = await findApproverForSection(sectionKey, body.employeeId)
+      const approverId = await findApproverForSection(sectionKey, body.employeeId, companyCode)
       let approverName: string | null = null
 
       if (approverId) {
