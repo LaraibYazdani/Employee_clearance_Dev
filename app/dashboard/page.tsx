@@ -25,8 +25,8 @@ export default function DashboardRedirect() {
     } else if (roles.some((r) => r.startsWith('DEPT_APPROVER_'))) {
       router.replace('/dashboard/approver')
     } else {
-      // EMPLOYEE or unknown role
-      router.replace('/dashboard/hrbp')
+      // EMPLOYEE or unknown role — show their own clearance list
+      router.replace('/clearance')
     }
   }, [user, isLoading, isAuthenticated, router])
 

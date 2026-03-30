@@ -1,5 +1,42 @@
 import { prisma } from './prisma'
 
+// Maps section_key → the portal role that grants approver access to that section
+const SECTION_TO_ROLE: Record<string, string> = {
+  IR_DEPT:          'DEPT_APPROVER_IR',
+  IT_DEPT:          'DEPT_APPROVER_IT',
+  SUPPLY_MGMT:      'DEPT_APPROVER_SUPPLY',
+  ICS_DEPT:         'DEPT_APPROVER_ICS',
+  SECURITY:         'DEPT_APPROVER_SECURITY',
+  OTHER_FACILITIES: 'DEPT_APPROVER_OTHER',
+  DEPT_HEAD:        'DEPT_APPROVER_HEAD',
+  OD_DEPT:          'DEPT_APPROVER_OD',
+  HR_DEPT:          'DEPT_APPROVER_HR',
+  FINANCE:          'DEPT_APPROVER_FINANCE',
+}
+
+/**
+ * Grants the corresponding DEPT_APPROVER_* role to the user if they don't already have it.
+ * Preserves all existing roles.
+ */
+async function grantApproverRole(approverId: string, sectionKey: string): Promise<void> {
+  const role = SECTION_TO_ROLE[sectionKey]
+  if (!role) return
+
+  const user = await prisma.user.findUnique({
+    where: { id: approverId },
+    select: { id: true, roles: true },
+  })
+  if (!user) return
+
+  const currentRoles = Array.isArray(user.roles) ? (user.roles as string[]) : []
+  if (currentRoles.includes(role)) return
+
+  await prisma.user.update({
+    where: { id: approverId },
+    data: { roles: [...currentRoles, role] },
+  })
+}
+
 /**
  * Checks whether the given user is already assigned to a DIFFERENT department
  * for the same company. Returns the conflicting section_key if found, null otherwise.
@@ -76,22 +113,26 @@ export async function setApproverForItem(
   itemKey: string,
   approverId: string
 ) {
-  return prisma.approverAssignment.upsert({
-    where: {
-      company_code_section_key_item_key: {
+  const [result] = await Promise.all([
+    prisma.approverAssignment.upsert({
+      where: {
+        company_code_section_key_item_key: {
+          company_code: companyCode,
+          section_key: sectionKey,
+          item_key: itemKey,
+        },
+      },
+      update: { approver_id: approverId },
+      create: {
         company_code: companyCode,
         section_key: sectionKey,
         item_key: itemKey,
+        approver_id: approverId,
       },
-    },
-    update: { approver_id: approverId },
-    create: {
-      company_code: companyCode,
-      section_key: sectionKey,
-      item_key: itemKey,
-      approver_id: approverId,
-    },
-  })
+    }),
+    grantApproverRole(approverId, sectionKey),
+  ])
+  return result
 }
 
 /**
