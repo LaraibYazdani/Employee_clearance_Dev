@@ -44,7 +44,15 @@ function DaysCell({ dateOfLeaving }: { dateOfLeaving?: string }) {
 
 export default function ApproverDashboard() {
   const router = useRouter()
-  const { user, token } = useAuth()
+  const { user, token, isLoading } = useAuth()
+
+  // Role guard — redirect users without any DEPT_APPROVER_* role
+  useEffect(() => {
+    if (isLoading) return
+    if (!user || !user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))) {
+      router.replace('/clearance')
+    }
+  }, [user, isLoading, router])
 
   const [clearances, setClearances] = useState<ClearanceRequest[]>([])
   const [loading, setLoading] = useState(true)

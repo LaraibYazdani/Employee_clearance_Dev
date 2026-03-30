@@ -76,7 +76,15 @@ function DaysCell({ dateOfLeaving }: { dateOfLeaving?: string }) {
 
 export default function HRBPDashboard() {
   const router = useRouter()
-  const { token } = useAuth()
+  const { user, token, isLoading } = useAuth()
+
+  // Role guard — redirect non-HRBP users
+  useEffect(() => {
+    if (isLoading) return
+    if (!user || !user.roles.includes('HRBP')) {
+      router.replace('/clearance')
+    }
+  }, [user, isLoading, router])
 
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [clearances, setClearances] = useState<ClearanceRequest[]>([])
