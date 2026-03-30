@@ -60,8 +60,8 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       // Also ensure the clearance itself is active
       where.status = { in: ['IN_PROGRESS', 'PENDING_HRBP'] }
     } else {
-      // No access for other roles
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      // EMPLOYEE — can only see their own clearances
+      where.employee_id = user.id
     }
 
     const clearances = await prisma.clearanceRequest.findMany({
