@@ -56,8 +56,9 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
     const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
     const isSuperAdmin = user.roles.includes('SUPER_ADMIN')
     const isOwnerHRBP = user.roles.includes('HRBP') && clearance.initiated_by_hrbp_id === user.id
+    const isSubjectEmployee = clearance.employee_id === user.id
 
-    if (!isSuperAdmin && !isOwnerHRBP && !isDeptApprover) {
+    if (!isSuperAdmin && !isOwnerHRBP && !isDeptApprover && !isSubjectEmployee) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

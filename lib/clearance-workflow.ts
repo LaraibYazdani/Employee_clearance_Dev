@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { SECTION_2_KEYS, SECTION_3_KEYS, SECTION_ROLE_MAP } from '@/lib/clearance-config'
+import { SECTION_ROLE_MAP } from '@/lib/clearance-config'
 import {
   notifySection3Approvers,
   notifyHRBPCompletion,
@@ -13,48 +13,44 @@ function nowPKT(): Date {
 }
 
 /**
- * Checks whether all Section 2 sections are APPROVED.
- * If yes, unlocks Section 3 sections (changes status from LOCKED to PENDING)
- * and notifies Section 3 approvers.
+ * Checks whether all phase-2 sections are APPROVED.
+ * If yes, unlocks phase-3 sections (changes status from LOCKED to PENDING)
+ * and notifies phase-3 approvers.
  *
- * Returns true if Section 3 was just unlocked, false otherwise.
+ * Returns true if phase-3 was just unlocked, false otherwise.
  */
 export async function checkAndUnlockSection3(clearanceId: string): Promise<boolean> {
   const sections = await prisma.clearanceSection.findMany({
     where: { clearance_request_id: clearanceId },
   })
 
-  const section2Keys = SECTION_2_KEYS as readonly string[]
-  const section3Keys = SECTION_3_KEYS as readonly string[]
+  const phase2Sections = sections.filter((s) => s.phase === 2)
+  const phase3Sections = sections.filter((s) => s.phase === 3)
 
-  const section2Sections = sections.filter((s) => section2Keys.includes(s.section_key))
-  const allSection2Approved = section2Sections.every((s) => s.status === 'APPROVED')
+  const allPhase2Approved = phase2Sections.every((s) => s.status === 'APPROVED')
+  if (!allPhase2Approved) return false
 
-  if (!allSection2Approved) return false
-
-  const section3Sections = sections.filter((s) => section3Keys.includes(s.section_key))
-  const anyStillLocked = section3Sections.some((s) => s.status === 'LOCKED')
-
+  const anyStillLocked = phase3Sections.some((s) => s.status === 'LOCKED')
   if (!anyStillLocked) return false
 
-  // Unlock all Section 3 sections
+  // Unlock all phase-3 sections
   await prisma.clearanceSection.updateMany({
     where: {
       clearance_request_id: clearanceId,
-      section_key: { in: [...SECTION_3_KEYS] },
+      phase: 3,
       status: 'LOCKED',
     },
     data: { status: 'PENDING' },
   })
 
-  // Notify Section 3 approvers
+  // Notify phase-3 approvers
   await notifySection3Approvers(clearanceId)
 
   return true
 }
 
 /**
- * Checks whether ALL sections (Section 2 + Section 3) are APPROVED.
+ * Checks whether ALL sections are APPROVED.
  * Returns true if the clearance is fully approved.
  */
 export async function checkAndCompleteClearance(clearanceId: string): Promise<boolean> {
@@ -62,10 +58,7 @@ export async function checkAndCompleteClearance(clearanceId: string): Promise<bo
     where: { clearance_request_id: clearanceId },
   })
 
-  const relevantKeys = [...SECTION_2_KEYS, ...SECTION_3_KEYS] as string[]
-  const relevantSections = sections.filter((s) => relevantKeys.includes(s.section_key))
-
-  const allApproved = relevantSections.every((s) => s.status === 'APPROVED')
+  const allApproved = sections.every((s) => s.status === 'APPROVED')
   if (!allApproved) return false
 
   await triggerCompletion(clearanceId)
@@ -79,7 +72,6 @@ export async function checkAndCompleteClearance(clearanceId: string): Promise<bo
 export async function triggerCompletion(clearanceId: string): Promise<void> {
   const now = nowPKT()
 
-  // Find the HRBP to use as the actor for the system log entry
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     select: { initiated_by_hrbp_id: true },

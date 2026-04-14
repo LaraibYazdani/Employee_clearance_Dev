@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
 import { useAuth } from '@/lib/auth-context'
 import { ClearanceRequest } from '@/types'
 import { formatDatePKT, getSectionLabel } from '@/lib/utils'
@@ -52,18 +53,16 @@ export default function EmployeeClearancePage() {
     const roles = user.roles ?? []
     if (roles.includes('SUPER_ADMIN')) {
       router.replace('/admin')
-    } else if (roles.includes('HRBP')) {
-      router.replace('/dashboard/hrbp')
     } else if (roles.some((r) => r.startsWith('DEPT_APPROVER_'))) {
       router.replace('/dashboard/approver')
     }
-    // EMPLOYEE stays here
+    // HRBP and EMPLOYEE both stay here to view their own clearance status
   }, [user, isLoading, router])
 
   const fetchClearances = useCallback(async () => {
     if (!token) return
     try {
-      const res = await fetch('/api/clearance', {
+      const res = await fetch('/api/clearance?view=mine', {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
@@ -92,7 +91,6 @@ export default function EmployeeClearancePage() {
   const roles = user?.roles ?? []
   if (
     roles.includes('SUPER_ADMIN') ||
-    roles.includes('HRBP') ||
     roles.some((r) => r.startsWith('DEPT_APPROVER_'))
   ) {
     return (
@@ -165,9 +163,18 @@ export default function EmployeeClearancePage() {
                 </div>
               )}
 
-              {/* Footer: initiated date */}
-              <div className="px-6 py-3 border-t border-gray-50 bg-gray-50/50 text-xs text-gray-400">
-                Initiated on {formatDatePKT(c.created_at)}
+              {/* Footer: initiated date + view details */}
+              <div className="px-6 py-3 border-t border-gray-50 bg-gray-50/50 flex items-center justify-between">
+                <span className="text-xs text-gray-400">
+                  Initiated on {formatDatePKT(c.created_at)}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => router.push(`/clearance/${c.id}`)}
+                >
+                  View Details
+                </Button>
               </div>
             </div>
           ))}

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(grep -n \"action\" D:/Packages/Employee_Clearance_Portal/app/api/clearance/[id]/finance/route.ts)",
-      "Bash(grep -n \"issued_by_user\" app/api/clearance/[id]/route.ts)"
+      "Bash(grep -n \"issued_by_user\" app/api/clearance/[id]/route.ts)",
+      "Bash(node -e \"const p = require\\(''puppeteer''\\); console.log\\(''executablePath:'', p.executablePath\\(\\)\\)\")"
     ]
   }
 }

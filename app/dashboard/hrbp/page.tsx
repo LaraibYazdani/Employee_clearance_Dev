@@ -78,18 +78,22 @@ export default function HRBPDashboard() {
   const router = useRouter()
   const { user, token, isLoading } = useAuth()
 
-  // Role guard — redirect non-HRBP users
+  // Role guard — SUPER_ADMIN and dept approvers have their own dashboards;
+  // everyone else (HRBP, EMPLOYEE) can use this page
   useEffect(() => {
     if (isLoading) return
-    if (!user || !user.roles.includes('HRBP')) {
-      router.replace('/clearance')
+    if (!user) { router.replace('/login'); return }
+    if (user.roles.includes('SUPER_ADMIN')) { router.replace('/admin'); return }
+    // Only bounce pure dept-approvers (no HRBP role) to their own dashboard
+    if (user.roles.some((r) => r.startsWith('DEPT_APPROVER_')) && !user.roles.includes('HRBP')) {
+      router.replace('/dashboard/approver')
     }
   }, [user, isLoading, router])
 
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [clearances, setClearances] = useState<ClearanceRequest[]>([])
-  const [loadingStats, setLoadingStats] = useState(true)
-  const [loadingClearances, setLoadingClearances] = useState(true)
+  const [loadingStats, setLoadingStats] = useState(false)
+  const [loadingClearances, setLoadingClearances] = useState(false)
 
   const authHeaders = useCallback(
     () => ({ Authorization: `Bearer ${token}` }),
@@ -98,6 +102,7 @@ export default function HRBPDashboard() {
 
   const fetchStats = useCallback(async () => {
     if (!token) return
+    setLoadingStats(true)
     try {
       const res = await fetch('/api/dashboard/stats', { headers: authHeaders() })
       if (res.ok) {
@@ -111,6 +116,7 @@ export default function HRBPDashboard() {
 
   const fetchClearances = useCallback(async () => {
     if (!token) return
+    setLoadingClearances(true)
     try {
       const res = await fetch('/api/clearance', { headers: authHeaders() })
       if (res.ok) {
@@ -123,9 +129,20 @@ export default function HRBPDashboard() {
   }, [token, authHeaders])
 
   useEffect(() => {
-    fetchStats()
-    fetchClearances()
-  }, [fetchStats, fetchClearances])
+    if (!isLoading) {
+      fetchStats()
+      fetchClearances()
+    }
+  }, [isLoading, fetchStats, fetchClearances])
+
+  // Wait for auth to resolve before rendering anything
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin h-8 w-8 rounded-full border-4 border-indigo-600 border-t-transparent" />
+      </div>
+    )
+  }
 
   return (
     <DashboardLayout>

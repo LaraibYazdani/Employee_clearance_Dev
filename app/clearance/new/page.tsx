@@ -14,9 +14,11 @@ import { formatDatePKT } from '@/lib/utils'
 ───────────────────────────────────────────── */
 interface FormData {
   issued_by: string
-  issuance_date: string
-  receiving_date: string
   date_of_leaving: string
+  laptop_buyback: string
+  vehicle_loan: string
+  sim_transfer: string
+  other_query: string
 }
 
 /* ─────────────────────────────────────────────
@@ -81,6 +83,20 @@ function StepIndicator({ current }: { current: number }) {
 /* ─────────────────────────────────────────────
    Step 1: Employee Search
 ───────────────────────────────────────────── */
+interface SFResult {
+  userId: string   // mapped from sf_employee_id in response
+  displayName: string
+  full_name: string
+  email: string
+  title: string
+  designation: string
+  payGrade: string
+  department: string
+  division: string
+  inDb: boolean
+  dbId: string | null
+}
+
 function EmployeeSearch({
   token,
   onSelect,
@@ -92,6 +108,14 @@ function EmployeeSearch({
   const [results, setResults] = useState<User[]>([])
   const [searching, setSearching] = useState(false)
   const [open, setOpen] = useState(false)
+
+  // SF fallback state
+  const [sfResults, setSfResults] = useState<SFResult[]>([])
+  const [sfSearching, setSfSearching] = useState(false)
+  const [sfError, setSfError] = useState('')
+  const [importing, setImporting] = useState<string | null>(null)
+  const [showSf, setShowSf] = useState(false)
+
   const wrapperRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -100,16 +124,21 @@ function EmployeeSearch({
       if (!q.trim() || !token) {
         setResults([])
         setOpen(false)
+        setShowSf(false)
+        setSfResults([])
         return
       }
       setSearching(true)
+      setShowSf(false)
+      setSfResults([])
       try {
         const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         if (res.ok) {
           const data = await res.json()
-          setResults(Array.isArray(data) ? data : (data.users ?? []))
+          const users = Array.isArray(data) ? data : (data.users ?? [])
+          setResults(users)
           setOpen(true)
         }
       } finally {
@@ -119,9 +148,66 @@ function EmployeeSearch({
     [token]
   )
 
+  const searchSF = async () => {
+    if (!query.trim() || !token) return
+    setSfSearching(true)
+    setSfResults([])
+    setShowSf(true)
+    try {
+      const res = await fetch(`/api/clearance/employee-search?q=${encodeURIComponent(query.trim())}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        // Normalize sf_employee_id → userId for internal use
+        const normalized = (Array.isArray(data) ? data : []).map((u: any) => ({
+          ...u,
+          userId: u.sf_employee_id,
+          displayName: u.full_name,
+        }))
+        setSfResults(normalized)
+      }
+    } catch { /* ignore */ }
+    finally {
+      setSfSearching(false)
+    }
+  }
+
+  const importAndSelect = async (sf: SFResult) => {
+    if (!token) return
+    setImporting(sf.userId)
+    try {
+      let dbId = sf.dbId
+      if (!sf.inDb) {
+        const importRes = await fetch('/api/clearance/employee-search', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sf_user_id: sf.userId }),
+        })
+        if (!importRes.ok) return
+        const data = await importRes.json()
+        dbId = data.user.id
+      }
+      // Fetch the full user record from DB and select it
+      const res = await fetch(`/api/users/search?q=${encodeURIComponent(sf.userId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const users: User[] = await res.json()
+        const found = users.find((u) => u.id === dbId) ?? users[0]
+        if (found) { onSelect(found); setQuery(found.full_name); setShowSf(false) }
+      }
+    } catch { /* ignore */ }
+    finally {
+      setImporting(null)
+    }
+  }
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
     setQuery(val)
+    setShowSf(false)
+    setSfResults([])
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => search(val), 300)
   }
@@ -136,6 +222,8 @@ function EmployeeSearch({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  const noDbResults = !searching && query.trim() && results.length === 0
 
   return (
     <div ref={wrapperRef} className="relative max-w-xl mx-auto">
@@ -166,6 +254,7 @@ function EmployeeSearch({
         )}
       </div>
 
+      {/* DB results dropdown */}
       {open && results.length > 0 && (
         <ul className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto">
           {results.map((emp) => (
@@ -188,11 +277,113 @@ function EmployeeSearch({
           ))}
         </ul>
       )}
-      {open && results.length === 0 && !searching && query.trim() && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-4 text-sm text-gray-500 text-center">
-          No employees found for &quot;{query}&quot;
+
+      {/* No DB results — offer SF search */}
+      {noDbResults && !showSf && (
+        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex items-center justify-between">
+          <span className="text-sm text-gray-500">
+            Not found in portal — search SuccessFactors?
+          </span>
+          <button
+            type="button"
+            onClick={searchSF}
+            className="ml-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            Search SF
+          </button>
         </div>
       )}
+
+      {/* SF results */}
+      {showSf && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
+          <div className="px-4 py-2 border-b border-amber-200 flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-800 uppercase tracking-wide">
+              SuccessFactors Results
+            </span>
+            {sfSearching && (
+              <svg className="animate-spin w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+          </div>
+          {sfError && (
+            <p className="px-4 py-3 text-sm text-red-600">{sfError}</p>
+          )}
+          {!sfSearching && !sfError && sfResults.length === 0 && (
+            <p className="px-4 py-3 text-sm text-gray-500 text-center">No results in SuccessFactors.</p>
+          )}
+          {sfResults.map((sf) => (
+            <div key={sf.userId} className="flex items-center justify-between px-4 py-3 border-b border-amber-100 last:border-0 bg-white">
+              <div>
+                <p className="text-sm font-medium text-gray-900">{sf.displayName || sf.full_name}</p>
+                <p className="text-xs text-gray-500">{sf.userId} &bull; {sf.designation || sf.department || '—'}</p>
+              </div>
+              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded font-medium ${sf.inDb ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                {sf.inDb ? 'In Portal' : 'SF Only'}
+              </span>
+              <button
+                type="button"
+                disabled={importing === sf.userId}
+                onClick={() => importAndSelect(sf)}
+                className="ml-3 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50 bg-indigo-600 hover:bg-indigo-700"
+              >
+                {importing === sf.userId ? 'Importing...' : sf.inDb ? 'Select' : 'Import & Select'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   Yes / No / NA toggle
+───────────────────────────────────────────── */
+function YesNoNa({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  const options = ['YES', 'NO', 'NA']
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+        {label} <span className="text-red-500">*</span>
+      </label>
+      <div className="flex gap-2">
+        {options.map((opt) => {
+          const active = value === opt
+          const activeClass =
+            opt === 'YES'
+              ? 'bg-green-600 text-white border-green-600'
+              : opt === 'NO'
+              ? 'bg-red-500 text-white border-red-500'
+              : 'bg-gray-500 text-white border-gray-500'
+          return (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => onChange(opt)}
+              className={[
+                'px-5 py-1.5 rounded-lg text-xs font-semibold border transition-colors',
+                active ? activeClass : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50',
+              ].join(' ')}
+            >
+              {opt}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -261,28 +452,39 @@ function SummaryRow({ label, value }: { label: string; value?: string }) {
 ───────────────────────────────────────────── */
 export default function InitiateClearancePage() {
   const router = useRouter()
-  const { token } = useAuth()
+  const { token, user } = useAuth()
 
   const [step, setStep] = useState(1)
-  // Extended user type that may include date_of_leaving from the clearance context
-  const [selectedEmployee, setSelectedEmployee] = useState<(User & { date_of_leaving?: string }) | null>(null)
+  const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null)
   const [formData, setFormData] = useState<FormData>({
     issued_by: '',
-    issuance_date: '',
-    receiving_date: '',
     date_of_leaving: '',
+    laptop_buyback: '',
+    vehicle_loan: '',
+    sim_transfer: '',
+    other_query: '',
   })
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  const [hrbpError, setHrbpError] = useState<string | null>(null)
+
+  // Autofill issued_by once auth resolves
+  useEffect(() => {
+    if (user?.full_name) {
+      setFormData((prev) => ({ ...prev, issued_by: user.full_name }))
+    }
+  }, [user?.full_name])
 
   const setField = (field: keyof FormData) => (value: string) =>
     setFormData((prev) => ({ ...prev, [field]: value }))
 
   const canContinueStep2 =
     formData.issued_by.trim() !== '' &&
-    formData.issuance_date !== '' &&
-    formData.receiving_date !== '' &&
-    (selectedEmployee?.date_of_leaving || formData.date_of_leaving) !== ''
+    formData.date_of_leaving !== '' &&
+    formData.laptop_buyback !== '' &&
+    formData.vehicle_loan !== '' &&
+    formData.sim_transfer !== ''
 
   const handleSubmit = async () => {
     if (!selectedEmployee || !token) return
@@ -298,10 +500,11 @@ export default function InitiateClearancePage() {
         body: JSON.stringify({
           employeeId: selectedEmployee.id,
           issuedBy: formData.issued_by,
-          issuanceDate: formData.issuance_date || undefined,
-          receivingDate: formData.receiving_date || undefined,
-          dateOfLeaving:
-            formData.date_of_leaving || selectedEmployee.date_of_leaving,
+          dateOfLeaving: formData.date_of_leaving || undefined,
+          laptopBuyback: formData.laptop_buyback || undefined,
+          vehicleLoan: formData.vehicle_loan || undefined,
+          simTransfer: formData.sim_transfer || undefined,
+          otherQuery: formData.other_query || undefined,
         }),
       })
       if (!res.ok) {
@@ -317,9 +520,6 @@ export default function InitiateClearancePage() {
       setSubmitting(false)
     }
   }
-
-  const effectiveDOL =
-    formData.date_of_leaving || (selectedEmployee as any)?.date_of_leaving
 
   return (
     <DashboardLayout>
@@ -341,6 +541,7 @@ export default function InitiateClearancePage() {
             <div className="py-6">
               <EmployeeSearch token={token} onSelect={(emp) => {
                 setSelectedEmployee(emp)
+                setHrbpError(null)
               }} />
               {selectedEmployee && (
                 <div className="mt-6 max-w-xl mx-auto p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800">
@@ -351,10 +552,36 @@ export default function InitiateClearancePage() {
                   </p>
                 </div>
               )}
+              {hrbpError && (
+                <div className="mt-4 max-w-xl mx-auto rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  {hrbpError}
+                </div>
+              )}
               <div className="flex justify-end mt-8 max-w-xl mx-auto">
                 <Button
                   disabled={!selectedEmployee}
-                  onClick={() => setStep(2)}
+                  loading={verifying}
+                  onClick={async () => {
+                    if (!selectedEmployee || !token) return
+                    setVerifying(true)
+                    setHrbpError(null)
+                    try {
+                      const res = await fetch(
+                        `/api/clearance/verify-hrbp?employeeId=${selectedEmployee.id}`,
+                        { headers: { Authorization: `Bearer ${token}` } }
+                      )
+                      const data = await res.json()
+                      if (!res.ok || data.allowed === false) {
+                        setHrbpError(data.message ?? 'You are not authorised to initiate clearance for this employee.')
+                        return
+                      }
+                      setStep(2)
+                    } catch {
+                      setHrbpError('Unable to verify HRBP status. Please try again.')
+                    } finally {
+                      setVerifying(false)
+                    }
+                  }}
                 >
                   Continue
                 </Button>
@@ -373,46 +600,60 @@ export default function InitiateClearancePage() {
                   Employee Information (from SAP / SF)
                 </h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <ReadonlyField
-                    label="Employee #"
-                    value={selectedEmployee.sf_employee_id}
-                  />
-                  <ReadonlyField
-                    label="Full Name"
-                    value={selectedEmployee.full_name}
-                  />
+                  <ReadonlyField label="Employee #" value={selectedEmployee.sf_employee_id} />
+                  <ReadonlyField label="Full Name" value={selectedEmployee.full_name} />
                   <ReadonlyField label="Grade" value={selectedEmployee.grade} />
-                  <ReadonlyField
-                    label="Designation"
-                    value={selectedEmployee.designation}
-                  />
-                  <ReadonlyField
-                    label="Department"
-                    value={selectedEmployee.department}
-                  />
-                  <ReadonlyField
-                    label="Division"
-                    value={selectedEmployee.division}
-                  />
-                  <ReadonlyField
-                    label="Company"
-                    value={selectedEmployee.company}
-                  />
-                  <ReadonlyField
-                    label="Date of Leaving (SF)"
-                    value={(selectedEmployee as any).date_of_leaving
-                      ? formatDatePKT((selectedEmployee as any).date_of_leaving)
-                      : undefined}
-                  />
+                  <ReadonlyField label="Designation" value={selectedEmployee.designation} />
+                  <ReadonlyField label="Department" value={selectedEmployee.department} />
+                  <ReadonlyField label="Division" value={selectedEmployee.division} />
+                  <ReadonlyField label="Company" value={selectedEmployee.company} />
                 </div>
               </div>
 
               <hr className="border-gray-100" />
 
-              {/* HRBP fill-in fields */}
+              {/* Employee queries */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-4">
+                  Employee Queries
+                </h4>
+                <div className="space-y-5">
+                  <YesNoNa
+                    label="Do you wish to buyback the laptop?"
+                    value={formData.laptop_buyback}
+                    onChange={setField('laptop_buyback')}
+                  />
+                  <YesNoNa
+                    label="Do you wish to settle your Vehicle Loan?"
+                    value={formData.vehicle_loan}
+                    onChange={setField('vehicle_loan')}
+                  />
+                  <YesNoNa
+                    label="Do you want to transfer your company provided SIM card to your name?"
+                    value={formData.sim_transfer}
+                    onChange={setField('sim_transfer')}
+                  />
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                      Please mention any other query
+                    </label>
+                    <textarea
+                      value={formData.other_query}
+                      onChange={(e) => setField('other_query')(e.target.value)}
+                      rows={3}
+                      placeholder="Optional — write any additional queries here..."
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <hr className="border-gray-100" />
+
+              {/* Clearance details */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-3">
-                  Clearance Details (filled by HRBP)
+                  Clearance Details
                 </h4>
                 <div className="grid grid-cols-2 gap-4">
                   <InputField
@@ -422,28 +663,12 @@ export default function InitiateClearancePage() {
                     required
                   />
                   <InputField
-                    label="Issuance Date"
+                    label="Date of Leaving"
                     type="date"
-                    value={formData.issuance_date}
-                    onChange={setField('issuance_date')}
+                    value={formData.date_of_leaving}
+                    onChange={setField('date_of_leaving')}
                     required
                   />
-                  <InputField
-                    label="Receiving Date"
-                    type="date"
-                    value={formData.receiving_date}
-                    onChange={setField('receiving_date')}
-                    required
-                  />
-                  {!(selectedEmployee as any).date_of_leaving && (
-                    <InputField
-                      label="Date of Leaving"
-                      type="date"
-                      value={formData.date_of_leaving}
-                      onChange={setField('date_of_leaving')}
-                      required
-                    />
-                  )}
                 </div>
               </div>
 
@@ -483,20 +708,24 @@ export default function InitiateClearancePage() {
 
               <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                  Employee Queries
+                </h4>
+                <SummaryRow label="Laptop Buyback" value={formData.laptop_buyback} />
+                <SummaryRow label="Vehicle Loan" value={formData.vehicle_loan} />
+                <SummaryRow label="SIM Transfer" value={formData.sim_transfer} />
+                {formData.other_query && (
+                  <SummaryRow label="Other Query" value={formData.other_query} />
+                )}
+              </div>
+
+              <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                   Clearance Details
                 </h4>
                 <SummaryRow label="Issued By" value={formData.issued_by} />
                 <SummaryRow
-                  label="Issuance Date"
-                  value={formData.issuance_date ? formatDatePKT(formData.issuance_date) : undefined}
-                />
-                <SummaryRow
-                  label="Receiving Date"
-                  value={formData.receiving_date ? formatDatePKT(formData.receiving_date) : undefined}
-                />
-                <SummaryRow
                   label="Date of Leaving"
-                  value={effectiveDOL ? formatDatePKT(effectiveDOL) : undefined}
+                  value={formData.date_of_leaving ? formatDatePKT(formData.date_of_leaving) : undefined}
                 />
               </div>
 

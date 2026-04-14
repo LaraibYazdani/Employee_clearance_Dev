@@ -57,6 +57,25 @@ function DetailField({ label, value }: { label: string; value?: string }) {
   )
 }
 
+function QueryBadge({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null
+  const colorMap: Record<string, string> = {
+    YES: 'bg-green-100 text-green-700 border-green-200',
+    NO: 'bg-red-100 text-red-700 border-red-200',
+    NA: 'bg-gray-100 text-gray-600 border-gray-200',
+  }
+  return (
+    <div>
+      <span className="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">
+        {label}
+      </span>
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${colorMap[value] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
 /* ─────────────────────────────────────────────
    Activity log item
 ───────────────────────────────────────────── */
@@ -326,6 +345,24 @@ export default function ClearanceDetailPage() {
             value={clearance.date_of_leaving ? formatDatePKT(clearance.date_of_leaving) : undefined}
           />
         </div>
+
+        {(clearance.laptop_buyback || clearance.vehicle_loan || clearance.sim_transfer || clearance.other_query) && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+              Employee Queries
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <QueryBadge label="Laptop Buyback" value={clearance.laptop_buyback} />
+              <QueryBadge label="Vehicle Loan" value={clearance.vehicle_loan} />
+              <QueryBadge label="SIM Transfer" value={clearance.sim_transfer} />
+            </div>
+            {clearance.other_query && (
+              <div className="mt-3">
+                <DetailField label="Other Query" value={clearance.other_query} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Two-column layout */}

@@ -16,6 +16,9 @@ export const COMPANY_CODE_MAP: Record<string, string> = {
   '1500': 'StarchPack',
   '1600': 'PREL',
   '1700': 'OMYA',
+  '5100': 'IGI General',
+  '5200': 'IGI Life',
+  '5300': 'IGI Finex',
 }
 
 // ---------------------------------------------------------------------------
@@ -314,18 +317,13 @@ async function liveGetEmpJob(userId: string): Promise<SFEmpJob | null> {
 }
 
 async function liveGetHRBP(userId: string): Promise<{ hrbpId: string } | null> {
-  try {
-    const data = await sfGet(
-      `/odata/v2/EmpJobRelationships?$filter=userId eq '${userId}'&$format=json`
-    )
-    const results = data?.d?.results ?? []
-    const hrbpRecord = results.find((r: any) => r.relationshipType === '18570')
-    if (!hrbpRecord) return null
-    return { hrbpId: hrbpRecord.relUserId }
-  } catch (err) {
-    console.error('[SF] liveGetHRBP error:', err)
-    return null
-  }
+  const data = await sfGet(
+    `/odata/v2/EmpJobRelationships?$filter=userId eq '${userId}'&$format=json`
+  )
+  const results = data?.d?.results ?? []
+  const hrbpRecord = results.find((r: any) => r.relationshipType === '18570')
+  if (!hrbpRecord) return null
+  return { hrbpId: hrbpRecord.relUserId }
 }
 
 function mapSFUserResult(r: any): SFUserProfile {

@@ -14,6 +14,9 @@ const COMPANY_CODES: Record<string, string> = {
   '1500': 'StarchPack',
   '1600': 'PREL',
   '1700': 'OMYA',
+  '5100': 'IGI General',
+  '5200': 'IGI Life',
+  '5300': 'IGI Finex',
 }
 
 interface Assignment {

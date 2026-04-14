@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import {
-  SECTION_2_KEYS,
-  SECTION_3_KEYS,
-  SECTION_ROLE_MAP,
-  DEFAULT_SECTION_ITEMS,
-  DEFAULT_FINANCE_ENTRIES,
-} from '@/lib/clearance-config'
+import { DEFAULT_FINANCE_ENTRIES } from '@/lib/clearance-config'
 import { findApproverForSection } from '@/lib/clearance-workflow'
+import { getTemplatesForCompany } from '@/lib/clearance-templates'
 import { notifySection2Approvers } from '@/lib/notifications'
+import { getHRBP } from '@/lib/successfactors'
 
 // PKT = UTC+5
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000
@@ -60,8 +56,14 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       // Also ensure the clearance itself is active
       where.status = { in: ['IN_PROGRESS', 'PENDING_HRBP'] }
     } else {
-      // EMPLOYEE — can only see their own clearances
-      where.employee_id = user.id
+      // EMPLOYEE / unverified HRBP — default shows clearances they initiated;
+      // ?view=mine shows clearances where they are the employee
+      const view = searchParams.get('view')
+      if (view === 'mine') {
+        where.employee_id = user.id
+      } else {
+        where.initiated_by_hrbp_id = user.id
+      }
     }
 
     const clearances = await prisma.clearanceRequest.findMany({
@@ -110,16 +112,16 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
 export const POST = withAuth(async (req: AuthenticatedRequest) => {
   const user = req.user!
 
-  if (!user.roles.includes('HRBP')) {
-    return NextResponse.json({ error: 'Forbidden', message: 'Only HRBP can create clearance requests' }, { status: 403 })
-  }
+  // Any authenticated user may attempt — SF is the source of truth for HRBP status
 
   let body: {
     employeeId?: string
     dateOfLeaving?: string
     issuedBy?: string
-    issuanceDate?: string
-    receivingDate?: string
+    laptopBuyback?: string
+    vehicleLoan?: string
+    simTransfer?: string
+    otherQuery?: string
   }
 
   try {
@@ -139,37 +141,65 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
 
-    // Enforce: HRBP can only initiate clearance for employees assigned to them in SF
-    // SUPER_ADMIN bypasses this restriction
+    // Verify via SF in real-time that the initiating user is the HRBP for this employee.
+    // SUPER_ADMIN bypasses this check.
     if (!user.roles.includes('SUPER_ADMIN')) {
-      if (!employee.hrbp_id) {
+      let sfHrbpId: string | null = null
+      try {
+        const hrbpResult = await getHRBP(employee.sf_employee_id)
+        sfHrbpId = hrbpResult?.hrbpId ?? null
+      } catch (err) {
+        console.error('[POST /api/clearance] SF HRBP check failed:', err)
+        return NextResponse.json(
+          {
+            error: 'Service Unavailable',
+            message: 'Unable to verify HRBP status. SuccessFactors is currently unavailable. Please try again later.',
+          },
+          { status: 503 }
+        )
+      }
+
+      if (!sfHrbpId || sfHrbpId !== user.sf_employee_id) {
         return NextResponse.json(
           {
             error: 'Forbidden',
-            message: `${employee.full_name} does not have an HRBP assigned in the system. They may need to log in once so their SuccessFactors data can sync.`,
+            message: `You are not the assigned HRBP for ${employee.full_name} in SuccessFactors.`,
           },
           { status: 403 }
         )
       }
-      if (employee.hrbp_id !== user.id) {
-        return NextResponse.json(
-          {
-            error: 'Forbidden',
-            message: `You are not the assigned HRBP for ${employee.full_name}. Only their designated HRBP can initiate a clearance.`,
-          },
-          { status: 403 }
-        )
+
+      // SF verified — auto-upgrade role to HRBP if not already assigned
+      if (!user.roles.includes('HRBP')) {
+        try {
+          const currentUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { roles: true },
+          })
+          const currentRoles = Array.isArray(currentUser?.roles) ? (currentUser.roles as string[]) : []
+          if (!currentRoles.includes('HRBP')) {
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { roles: [...currentRoles, 'HRBP'] },
+            })
+          }
+        } catch (err) {
+          console.error('[POST /api/clearance] Failed to auto-upgrade HRBP role:', err)
+          // Non-critical — clearance creation continues
+        }
       }
     }
 
     const companyCode = employee.company_code ?? null
     const now = nowPKT()
 
-    // Build section data for all Section 2 keys
+    // Fetch sections/items from DB templates (falls back to PL 1000)
+    const templates = await getTemplatesForCompany(companyCode)
+
     const sectionCreateData: any[] = []
 
-    for (const sectionKey of SECTION_2_KEYS) {
-      const approverId = await findApproverForSection(sectionKey, body.employeeId, companyCode)
+    for (const template of templates) {
+      const approverId = await findApproverForSection(template.section_key, body.employeeId!, companyCode)
       let approverName: string | null = null
 
       if (approverId) {
@@ -180,45 +210,14 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
         approverName = approverUser?.full_name ?? null
       }
 
-      const items = DEFAULT_SECTION_ITEMS[sectionKey] ?? []
-
       sectionCreateData.push({
-        section_key: sectionKey,
-        status: 'PENDING',
+        section_key: template.section_key,
+        phase: template.phase,
+        status: template.phase === 2 ? 'PENDING' : 'LOCKED',
         approver_id: approverId,
         approver_name: approverName,
         clearance_items: {
-          create: items.map((item) => ({
-            item_key: item.item_key,
-            description: item.description,
-            status: 'PENDING',
-          })),
-        },
-      })
-    }
-
-    // Build section data for all Section 3 keys (LOCKED initially)
-    for (const sectionKey of SECTION_3_KEYS) {
-      const approverId = await findApproverForSection(sectionKey, body.employeeId, companyCode)
-      let approverName: string | null = null
-
-      if (approverId) {
-        const approverUser = await prisma.user.findUnique({
-          where: { id: approverId },
-          select: { full_name: true },
-        })
-        approverName = approverUser?.full_name ?? null
-      }
-
-      const items = DEFAULT_SECTION_ITEMS[sectionKey] ?? []
-
-      sectionCreateData.push({
-        section_key: sectionKey,
-        status: 'LOCKED',
-        approver_id: approverId,
-        approver_name: approverName,
-        clearance_items: {
-          create: items.map((item) => ({
+          create: template.items.map((item) => ({
             item_key: item.item_key,
             description: item.description,
             status: 'PENDING',
@@ -236,8 +235,10 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
           status: 'IN_PROGRESS',
           date_of_leaving: body.dateOfLeaving ? new Date(body.dateOfLeaving) : null,
           issued_by: body.issuedBy ?? null,
-          issuance_date: body.issuanceDate ? new Date(body.issuanceDate) : null,
-          receiving_date: body.receivingDate ? new Date(body.receivingDate) : null,
+          laptop_buyback: body.laptopBuyback ?? null,
+          vehicle_loan: body.vehicleLoan ?? null,
+          sim_transfer: body.simTransfer ?? null,
+          other_query: body.otherQuery ?? null,
           clearance_sections: { create: sectionCreateData },
           finance_entries: {
             create: DEFAULT_FINANCE_ENTRIES.map((entry) => ({

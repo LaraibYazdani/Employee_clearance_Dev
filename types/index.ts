@@ -24,6 +24,10 @@ export interface ClearanceRequest {
   issued_by?: string
   issuance_date?: string
   receiving_date?: string
+  laptop_buyback?: string | null
+  vehicle_loan?: string | null
+  sim_transfer?: string | null
+  other_query?: string | null
   pdf_generated: boolean
   pdf_generated_at?: string
   created_at: string
