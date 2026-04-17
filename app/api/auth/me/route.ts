@@ -33,12 +33,7 @@ async function handler(req: AuthenticatedRequest): Promise<NextResponse> {
       )
     }
 
-    return NextResponse.json(
-      {
-        user: dbUser,
-      },
-      { status: 200 }
-    )
+    return NextResponse.json(dbUser, { status: 200 })
   } catch (error) {
     console.error('GET /api/auth/me error:', error)
     return NextResponse.json(

@@ -113,7 +113,7 @@ function ActivityItem({ item }: { item: Notification }) {
 export default function ClearanceDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { user, token } = useAuth()
+  const { user, token, refreshUser } = useAuth()
   const id = params.id as string
 
   const [clearance, setClearance] = useState<ClearanceRequest | null>(null)
@@ -179,10 +179,13 @@ export default function ClearanceDetailPage() {
   }, [token, id, authHeaders])
 
   useEffect(() => {
+    // Refresh user roles from DB on every page mount so stale JWT roles never
+    // block an approver whose role was updated after they logged in
+    refreshUser()
     fetchClearance()
     fetchActivity()
     fetchFinanceEntries()
-  }, [fetchClearance, fetchActivity, fetchFinanceEntries])
+  }, [fetchClearance, fetchActivity, fetchFinanceEntries, refreshUser])
 
   // Poll every 30 seconds
   useEffect(() => {
@@ -225,14 +228,14 @@ export default function ClearanceDetailPage() {
   const sections = clearance?.sections ?? []
   const currentSection = sections.find((s) => s.section_key === activeSection)
 
+  // Use server-computed can_act flag — avoids stale client-side role issues
+  // for dual-role users (e.g. HRBP who is also DEPT_APPROVER_IT)
   const canActOnSection = (sec: ClearanceSection): boolean => {
-    if (sec.status === 'LOCKED') return false
-    if (sec.status !== 'PENDING') return false
+    if (sec.can_act !== undefined) return sec.can_act
+    // Fallback for cached data without can_act
+    if (sec.status === 'LOCKED' || sec.status !== 'PENDING') return false
     if (isSuperAdmin) return true
-    if (isHRBP) return false
-    // Allow if the user is the assigned approver for this section
     if (sec.approver_id && sec.approver_id === user?.id) return true
-    // Allow if the user has the matching role for this section
     if (isDeptApprover && userSectionKey === sec.section_key) return true
     return false
   }
@@ -444,10 +447,7 @@ export default function ClearanceDetailPage() {
                       key={currentSection.id + currentSection.status}
                       clearanceId={id}
                       entries={financeEntries}
-                      isApprover={
-                        isDeptApprover && userSectionKey === 'FINANCE'
-                          || (currentSection.approver_id != null && currentSection.approver_id === user?.id)
-                      }
+                      isApprover={canActOnSection(currentSection)}
                       sectionStatus={currentSection.status}
                       onActionComplete={handleRefresh}
                     />

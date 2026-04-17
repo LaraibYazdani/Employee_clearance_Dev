@@ -10,6 +10,7 @@ interface AuthContextValue {
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -89,6 +90,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   )
 
+  const refreshUser = useCallback(async () => {
+    const stored = localStorage.getItem(TOKEN_KEY)
+    if (!stored) return
+    try {
+      const res = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${stored}` },
+      })
+      if (!res.ok) return
+      const data: User = await res.json()
+      setUser(data)
+    } catch {
+      // Non-critical — ignore
+    }
+  }, [])
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY)
     clearTokenCookie()
@@ -106,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!user,
         login,
         logout,
+        refreshUser,
       }}
     >
       {children}

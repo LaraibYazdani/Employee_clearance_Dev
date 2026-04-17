@@ -41,12 +41,25 @@ export interface ClearanceSection {
   id: string
   clearance_request_id: string
   section_key: string
+  label?: string
   status: 'PENDING' | 'APPROVED' | 'DENIED' | 'LOCKED'
   approver_id?: string
   approver_name?: string
   decision_at?: string
   note?: string
   items?: ClearanceItem[]
+  can_act?: boolean
+}
+
+export interface ClearanceItemAttachment {
+  id: string
+  clearance_item_id: string
+  uploaded_by_id: string
+  uploaded_by?: { id: string; full_name: string }
+  original_name: string
+  file_size: number
+  mime_type: string
+  created_at: string
 }
 
 export interface ClearanceItem {
@@ -56,6 +69,9 @@ export interface ClearanceItem {
   description: string
   comments?: string
   status: 'PENDING' | 'NA' | 'APPROVED' | 'FLAGGED'
+  assigned_approver_id?: string
+  assigned_approver_name?: string
+  attachments?: ClearanceItemAttachment[]
 }
 
 export interface FinanceEntry {

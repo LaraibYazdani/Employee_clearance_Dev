@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 
         const companyCode = job?.company ?? ''
         const companyName = COMPANY_CODE_MAP[companyCode] ?? companyCode
-        const designation = job?.localJobTitle || job?.jobTitle || profile?.title || ''
+        const designation = job?.jobTitle || job?.localJobTitle || profile?.title || ''
         const passwordHash = await hashPassword(password)
 
         // Use SF profile data where available, fall back to userId-based defaults

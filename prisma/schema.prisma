@@ -47,7 +47,8 @@ model User {
   notifications    Notification[]
 
   // Approver assignments
-  approver_assignments ApproverAssignment[] @relation("ApproverAssignments")
+  approver_assignments ApproverAssignment[]        @relation("ApproverAssignments")
+  uploaded_attachments ClearanceItemAttachment[]   @relation("AttachmentUploads")
 
   @@map("users")
 }
@@ -116,9 +117,25 @@ model ClearanceItem {
   updated_at           DateTime  @updatedAt
 
   // Relations
-  clearance_section    ClearanceSection @relation(fields: [clearance_section_id], references: [id], onDelete: Cascade)
+  clearance_section    ClearanceSection          @relation(fields: [clearance_section_id], references: [id], onDelete: Cascade)
+  attachments          ClearanceItemAttachment[]
 
   @@map("clearance_items")
+}
+
+model ClearanceItemAttachment {
+  id                String        @id @default(cuid())
+  clearance_item_id String
+  clearance_item    ClearanceItem @relation(fields: [clearance_item_id], references: [id], onDelete: Cascade)
+  uploaded_by_id    String
+  uploaded_by       User          @relation("AttachmentUploads", fields: [uploaded_by_id], references: [id])
+  original_name     String
+  stored_path       String        @db.Text
+  file_size         Int
+  mime_type         String
+  created_at        DateTime      @default(now())
+
+  @@map("clearance_item_attachments")
 }
 
 model ApproverAssignment {

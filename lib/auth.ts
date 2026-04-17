@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'jwt-dev-secret-change-in-production'
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h'
@@ -75,12 +76,24 @@ export function withAuth(handler: RouteHandler): RouteHandler {
         )
       }
 
+      // Always fetch fresh roles from DB — JWT roles go stale when admin changes them
+      let freshRoles: string[] = decoded.roles || []
+      try {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: decoded.id },
+          select: { roles: true },
+        })
+        if (dbUser) freshRoles = (dbUser.roles as string[]) || []
+      } catch {
+        // Non-critical — fall back to JWT roles if DB is unreachable
+      }
+
       req.user = {
         id: decoded.id,
         sf_employee_id: decoded.sf_employee_id,
         email: decoded.email,
         full_name: decoded.full_name,
-        roles: decoded.roles || [],
+        roles: freshRoles,
       }
 
       return handler(req, context)

@@ -97,7 +97,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
 
   const companyCode = job?.company ?? ''
   const companyName = COMPANY_CODE_MAP[companyCode] ?? companyCode
-  const designation = job?.localJobTitle || job?.jobTitle || profile.title || ''
+  const designation = job?.jobTitle || job?.localJobTitle || profile.title || ''
   const payGrade = job?.payGrade ?? profile.payGrade ?? ''
 
   // Placeholder hash — will be replaced on first successful SF login
