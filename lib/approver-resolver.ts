@@ -38,6 +38,47 @@ async function grantApproverRole(approverId: string, sectionKey: string): Promis
 }
 
 /**
+ * Revokes the corresponding DEPT_APPROVER_* role if the user is not assigned
+ * to any other items in that section for that company.
+ */
+async function revokeApproverRoleIfNotAssigned(
+  approverId: string,
+  companyCode: string,
+  sectionKey: string
+): Promise<void> {
+  const role = SECTION_TO_ROLE[sectionKey]
+  if (!role) return
+
+  // Check if user is still assigned to ANY item in this section for this company
+  const stillAssigned = await prisma.approverAssignment.findFirst({
+    where: {
+      company_code: companyCode,
+      section_key: sectionKey,
+      approver_id: approverId,
+    },
+    select: { id: true },
+  })
+
+  // If still assigned to at least one item, don't revoke the role
+  if (stillAssigned) return
+
+  // User is no longer assigned to this section — revoke the role
+  const user = await prisma.user.findUnique({
+    where: { id: approverId },
+    select: { id: true, roles: true },
+  })
+  if (!user) return
+
+  const currentRoles = Array.isArray(user.roles) ? (user.roles as string[]) : []
+  if (!currentRoles.includes(role)) return
+
+  await prisma.user.update({
+    where: { id: approverId },
+    data: { roles: currentRoles.filter((r) => r !== role) },
+  })
+}
+
+/**
  * Checks whether the given user is already assigned to a DIFFERENT department
  * for the same company. Returns the conflicting section_key if found, null otherwise.
  *
@@ -136,7 +177,7 @@ export async function setApproverForItem(
 }
 
 /**
- * Remove a single approver assignment.
+ * Remove a single approver assignment and revoke the role if they're no longer assigned.
  */
 export async function removeApproverForItem(
   companyCode: string,
@@ -144,7 +185,20 @@ export async function removeApproverForItem(
   itemKey: string
 ) {
   try {
-    return await prisma.approverAssignment.delete({
+    // Get the approver ID before deleting
+    const assignment = await prisma.approverAssignment.findUnique({
+      where: {
+        company_code_section_key_item_key: {
+          company_code: companyCode,
+          section_key: sectionKey,
+          item_key: itemKey,
+        },
+      },
+      select: { approver_id: true },
+    })
+
+    // Delete the assignment
+    const result = await prisma.approverAssignment.delete({
       where: {
         company_code_section_key_item_key: {
           company_code: companyCode,
@@ -153,6 +207,13 @@ export async function removeApproverForItem(
         },
       },
     })
+
+    // Revoke the role if they're no longer assigned to any items in this section
+    if (assignment?.approver_id) {
+      await revokeApproverRoleIfNotAssigned(assignment.approver_id, companyCode, sectionKey)
+    }
+
+    return result
   } catch {
     return null
   }

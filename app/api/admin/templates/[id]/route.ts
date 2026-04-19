@@ -49,7 +49,8 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
 })
 
 // ---------------------------------------------------------------------------
-// DELETE /api/admin/templates/[id]  — delete a section template (cascades items)
+// DELETE /api/admin/templates/[id]  — delete a section template
+// Cascades: deletes all approver assignments for that section and revokes roles
 // ---------------------------------------------------------------------------
 export const DELETE = withAuth(async (req: AuthenticatedRequest, context: any) => {
   const user = req.user!
@@ -60,8 +61,76 @@ export const DELETE = withAuth(async (req: AuthenticatedRequest, context: any) =
   const { id } = context.params as { id: string }
 
   try {
+    // Get the section template to find company_code and section_key
+    const sectionTemplate = await prisma.clearanceSectionTemplate.findUnique({
+      where: { id },
+      select: { company_code: true, section_key: true },
+    })
+
+    if (!sectionTemplate) {
+      return NextResponse.json({ error: 'Section template not found' }, { status: 404 })
+    }
+
+    const { company_code, section_key } = sectionTemplate
+
+    // Find all approver assignments for this section
+    const assignments = await prisma.approverAssignment.findMany({
+      where: { company_code, section_key },
+      select: { approver_id: true },
+    })
+
+    // Revoke roles from all approvers assigned to this section
+    const SECTION_TO_ROLE: Record<string, string> = {
+      'IR_DEPT': 'DEPT_APPROVER_IR',
+      'IT_DEPT': 'DEPT_APPROVER_IT',
+      'SUPPLY_MGMT': 'DEPT_APPROVER_SUPPLY',
+      'ICS_DEPT': 'DEPT_APPROVER_ICS',
+      'SECURITY': 'DEPT_APPROVER_SECURITY',
+      'OTHER_FACILITIES': 'DEPT_APPROVER_OTHER',
+      'DEPT_HEAD': 'DEPT_APPROVER_HEAD',
+      'OD_DEPT': 'DEPT_APPROVER_OD',
+      'HR_DEPT': 'DEPT_APPROVER_HR',
+      'FINANCE': 'DEPT_APPROVER_FINANCE',
+    }
+
+    const roleToRevoke = SECTION_TO_ROLE[section_key]
+
+    if (roleToRevoke) {
+      for (const assignment of assignments) {
+        const approver = await prisma.user.findUnique({
+          where: { id: assignment.approver_id },
+          select: { roles: true },
+        })
+
+        if (approver) {
+          const currentRoles = Array.isArray(approver.roles) ? (approver.roles as string[]) : []
+          if (currentRoles.includes(roleToRevoke)) {
+            await prisma.user.update({
+              where: { id: assignment.approver_id },
+              data: { roles: currentRoles.filter((r) => r !== roleToRevoke) },
+            })
+          }
+        }
+      }
+    }
+
+    // Delete all approver assignments for this section
+    await prisma.approverAssignment.deleteMany({
+      where: { company_code, section_key },
+    })
+
+    // Delete all item templates for this section
+    await prisma.clearanceItemTemplate.deleteMany({
+      where: { company_code, section_key },
+    })
+
+    // Delete the section template
     await prisma.clearanceSectionTemplate.delete({ where: { id } })
-    return NextResponse.json({ success: true })
+
+    return NextResponse.json({
+      success: true,
+      message: `Section deleted. Removed ${assignments.length} approver assignment(s) and revoked associated roles.`,
+    })
   } catch (error: any) {
     if (error?.code === 'P2025') {
       return NextResponse.json({ error: 'Section template not found' }, { status: 404 })

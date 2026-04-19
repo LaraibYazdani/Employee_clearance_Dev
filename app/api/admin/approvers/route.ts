@@ -22,18 +22,63 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
     assignmentMap[`${a.section_key}::${a.item_key}`] = a
   }
 
-  // Build full matrix from config
-  const sections = Object.entries(DEFAULT_SECTION_ITEMS)
-    .filter(([key]) => key !== 'FINANCE') // Finance has no sub-items
-    .map(([sectionKey, items]) => ({
+  // Fetch ACTIVE sections from template for this company
+  const activeSectionTemplates = await prisma.clearanceSectionTemplate.findMany({
+    where: { company_code: companyCode },
+    orderBy: { sort_order: 'asc' },
+  })
+
+  // Fetch custom items from database for this company
+  const customItems = await prisma.clearanceItemTemplate.findMany({
+    where: { company_code: companyCode },
+    orderBy: [{ section_key: 'asc' }, { sort_order: 'asc' }],
+  })
+
+  // Build a lookup: section_key → custom items
+  const customItemsBySection: Record<string, typeof customItems> = {}
+  for (const item of customItems) {
+    if (!customItemsBySection[item.section_key]) {
+      customItemsBySection[item.section_key] = []
+    }
+    customItemsBySection[item.section_key].push(item)
+  }
+
+  // Build matrix ONLY from active template sections (not hardcoded defaults)
+  const sections = activeSectionTemplates.map((template) => {
+    const sectionKey = template.section_key
+    const defaultItems = DEFAULT_SECTION_ITEMS[sectionKey] ?? []
+
+    // Use custom items if they exist, otherwise use default items
+    const itemsToUse = customItemsBySection[sectionKey] && customItemsBySection[sectionKey].length > 0
+      ? customItemsBySection[sectionKey].map((item) => ({
+          item_key: item.item_key,
+          description: item.description,
+        }))
+      : defaultItems
+
+    return {
       section_key: sectionKey,
-      section_label: SECTION_LABELS[sectionKey] ?? sectionKey,
-      items: items.map((item) => ({
-        item_key: item.item_key,
-        description: item.description,
-        assignment: assignmentMap[`${sectionKey}::${item.item_key}`] ?? null,
-      })),
-    }))
+      section_label: template.label,
+      items: itemsToUse.length > 0 ? itemsToUse.map((item) => {
+        // If there's a section-level assignment, use that for all items (section-level override)
+        const sectionLevelAssignment = assignmentMap[`${sectionKey}::section`]
+        const itemAssignment = sectionLevelAssignment ?? assignmentMap[`${sectionKey}::${item.item_key}`]
+        
+        return {
+          item_key: item.item_key,
+          description: item.description,
+          assignment: itemAssignment ?? null,
+        }
+      }) : [
+        // For sections with no items, create a section-level assignment
+        {
+          item_key: 'section',
+          description: `${template.label} Section Approver`,
+          assignment: assignmentMap[`${sectionKey}::section`] ?? null,
+        }
+      ],
+    }
+  })
 
   return NextResponse.json({ company_code: companyCode, sections })
 })
@@ -67,6 +112,17 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
       },
       { status: 409 }
     )
+  }
+
+  // If assigning at section level (item_key = 'section'), clear all individual item assignments for this section
+  if (item_key === 'section') {
+    await prisma.approverAssignment.deleteMany({
+      where: {
+        company_code: company_code,
+        section_key: section_key,
+        item_key: { not: 'section' }, // Delete all non-section items
+      },
+    })
   }
 
   const result = await setApproverForItem(company_code, section_key, item_key, approver_id)

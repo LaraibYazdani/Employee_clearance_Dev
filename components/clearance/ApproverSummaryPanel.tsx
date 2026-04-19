@@ -75,24 +75,24 @@ export default function ApproverSummaryPanel({
             >
               {/* Section name + badge */}
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium text-gray-800 truncate">
-                  {getSectionLabel(section.section_key)}
-                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-gray-800 truncate block">
+                    {section.label || getSectionLabel(section.section_key)}
+                  </span>
+                  {section.approver_name && (
+                    <span className="text-xs text-gray-500 truncate block mt-0.5">
+                      {section.approver_name}
+                    </span>
+                  )}
+                </div>
                 <Badge status={section.status} />
               </div>
 
-              {/* Approver + timestamp */}
+              {/* Timestamp */}
               {(section.status === 'APPROVED' || section.status === 'DENIED') &&
-                section.approver_name && (
-                  <div className="mt-1.5 text-xs text-gray-500 space-y-0.5">
-                    <p>
-                      <span className="font-medium text-gray-700">
-                        {section.approver_name}
-                      </span>
-                    </p>
-                    {section.decision_at && (
-                      <p>{formatRelativeTime(section.decision_at)}</p>
-                    )}
+                section.decision_at && (
+                  <div className="mt-1.5 text-xs text-gray-500">
+                    <p>{formatRelativeTime(section.decision_at)}</p>
                   </div>
                 )}
 

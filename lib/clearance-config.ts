@@ -86,7 +86,9 @@ export const DEFAULT_SECTION_ITEMS: Record<string, Array<{ item_key: string; des
     { item_key: 'project_buraq', description: 'Project Buraq Recovery (If Applicable)' },
     { item_key: 'hr_other', description: 'Other' },
   ],
-  'FINANCE': [],
+  'FINANCE': [
+    { item_key: 'section', description: 'Finance Approver' },
+  ],
 }
 
 export const DEFAULT_FINANCE_ENTRIES = [

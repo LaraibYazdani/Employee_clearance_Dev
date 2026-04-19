@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { bulkAssignSection, checkApproverDepartmentConflict } from '@/lib/approver-resolver'
-import { DEFAULT_SECTION_ITEMS } from '@/lib/clearance-config'
+import { checkApproverDepartmentConflict, setApproverForItem } from '@/lib/approver-resolver'
 
 // POST /api/admin/approvers/bulk
 // Body: { company_code, section_key, approver_id }
@@ -42,17 +41,20 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
     )
   }
 
-  const items = DEFAULT_SECTION_ITEMS[section_key] ?? []
-  if (items.length === 0) {
-    return NextResponse.json({ error: 'No items found for section' }, { status: 400 })
-  }
+  // Delete ALL existing item assignments for this section (both individual and section-level)
+  await prisma.approverAssignment.deleteMany({
+    where: {
+      company_code: company_code,
+      section_key: section_key,
+    },
+  })
 
-  const itemKeys = items.map((i) => i.item_key)
-  await bulkAssignSection(company_code, section_key, itemKeys, approver_id)
+  // Create a section-level assignment (item_key = 'section')
+  await setApproverForItem(company_code, section_key, 'section', approver_id)
 
   return NextResponse.json({
     success: true,
-    assigned: itemKeys.length,
+    message: `${approver.full_name} assigned to ${section_key} section`,
     approver: approver.full_name,
   })
 })

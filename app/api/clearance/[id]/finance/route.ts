@@ -61,21 +61,63 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
   const user = req.user!
   const { id: clearanceId } = context.params as { id: string }
 
-  // Allow role-based OR assigned approver for the finance section
-  const isFinanceRole = user.roles.includes('DEPT_APPROVER_FINANCE')
-  const isSuperAdmin = user.roles.includes('SUPER_ADMIN')
-  if (!isFinanceRole && !isSuperAdmin) {
-    // Check if user is the assigned approver for the FINANCE section
-    const finSection = await prisma.clearanceSection.findFirst({
-      where: { clearance_request_id: clearanceId, section_key: 'FINANCE' },
-      select: { approver_id: true },
+  // Access control authorization
+  try {
+    // Fetch clearance to verify access and get section info
+    const clearance = await prisma.clearanceRequest.findUnique({
+      where: { id: clearanceId },
+      select: {
+        id: true,
+        employee_id: true,
+        initiated_by_hrbp_id: true,
+      },
     })
-    if (finSection?.approver_id !== user.id) {
-      return NextResponse.json(
-        { error: 'Forbidden', message: 'You are not authorized to update finance entries' },
-        { status: 403 }
-      )
+
+    if (!clearance) {
+      return NextResponse.json({ error: 'Clearance not found' }, { status: 404 })
     }
+
+    // Clearance-level access control
+    // Users can only access if they are:
+    // 1. Super Admin, OR
+    // 2. Subject Employee, OR
+    // 3. Initiating HRBP, OR
+    // 4. Assigned approver for THIS specific clearance (must be assigned to at least one section)
+    const isSuperAdmin = user.roles.includes('SUPER_ADMIN')
+    const isOwnerHRBP = user.roles.includes('HRBP') && clearance.initiated_by_hrbp_id === user.id
+    const isSubjectEmployee = clearance.employee_id === user.id
+
+    // Check if user is assigned to any section in this clearance
+    const isAssignedToAnySectionInClearance = await prisma.clearanceSection.findFirst({
+      where: {
+        clearance_request_id: clearanceId,
+        approver_id: user.id,
+      },
+      select: { id: true },
+    })
+
+    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedToAnySectionInClearance) {
+      return NextResponse.json({ error: 'Forbidden: You cannot access this clearance' }, { status: 403 })
+    }
+
+    // Section-level access control: user must have FINANCE role or be the assigned approver
+    const isFinanceRole = user.roles.includes('DEPT_APPROVER_FINANCE')
+    if (!isFinanceRole && !isSuperAdmin) {
+      // Check if user is the assigned approver for the FINANCE section
+      const finSection = await prisma.clearanceSection.findFirst({
+        where: { clearance_request_id: clearanceId, section_key: 'FINANCE' },
+        select: { approver_id: true },
+      })
+      if (finSection?.approver_id !== user.id) {
+        return NextResponse.json(
+          { error: 'Forbidden: You are not authorized to update finance entries' },
+          { status: 403 }
+        )
+      }
+    }
+  } catch (error) {
+    console.error('[PATCH /api/clearance/[id]/finance] access control error:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 
   let body: {

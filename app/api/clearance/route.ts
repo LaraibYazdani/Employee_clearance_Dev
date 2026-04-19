@@ -196,8 +196,8 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
     // Fetch sections/items from DB templates (falls back to PL 1000)
     const templates = await getTemplatesForCompany(companyCode)
 
-    const sectionCreateData: any[] = []
-
+    // Pre-fetch all approver data OUTSIDE the transaction to avoid timeout
+    const approverData: Record<string, { id: string | null; name: string | null }> = {}
     for (const template of templates) {
       const approverId = await findApproverForSection(template.section_key, body.employeeId!, companyCode)
       let approverName: string | null = null
@@ -210,12 +210,23 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
         approverName = approverUser?.full_name ?? null
       }
 
+      approverData[template.section_key] = {
+        id: approverId,
+        name: approverName,
+      }
+    }
+
+    const sectionCreateData: any[] = []
+
+    for (const template of templates) {
+      const approver = approverData[template.section_key]
+
       sectionCreateData.push({
         section_key: template.section_key,
         phase: template.phase,
-        status: template.phase === 2 ? 'PENDING' : 'LOCKED',
-        approver_id: approverId,
-        approver_name: approverName,
+        status: 'PENDING',
+        approver_id: approver.id,
+        approver_name: approver.name,
         clearance_items: {
           create: template.items.map((item) => ({
             item_key: item.item_key,
@@ -227,50 +238,55 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
     }
 
     // Create clearance request with all nested data in a transaction
-    const clearance = await prisma.$transaction(async (tx) => {
-      const newClearance = await tx.clearanceRequest.create({
-        data: {
-          employee_id: body.employeeId!,
-          initiated_by_hrbp_id: user.id,
-          status: 'IN_PROGRESS',
-          date_of_leaving: body.dateOfLeaving ? new Date(body.dateOfLeaving) : null,
-          issued_by: body.issuedBy ?? null,
-          laptop_buyback: body.laptopBuyback ?? null,
-          vehicle_loan: body.vehicleLoan ?? null,
-          sim_transfer: body.simTransfer ?? null,
-          other_query: body.otherQuery ?? null,
-          clearance_sections: { create: sectionCreateData },
-          finance_entries: {
-            create: DEFAULT_FINANCE_ENTRIES.map((entry) => ({
-              gl_account: entry.gl_account,
-              particulars: entry.particulars,
-              section_group: entry.section_group,
-            })),
+    const clearance = await prisma.$transaction(
+      async (tx) => {
+        const newClearance = await tx.clearanceRequest.create({
+          data: {
+            employee_id: body.employeeId!,
+            initiated_by_hrbp_id: user.id,
+            status: 'IN_PROGRESS',
+            date_of_leaving: body.dateOfLeaving ? new Date(body.dateOfLeaving) : null,
+            issued_by: body.issuedBy ?? null,
+            laptop_buyback: body.laptopBuyback ?? null,
+            vehicle_loan: body.vehicleLoan ?? null,
+            sim_transfer: body.simTransfer ?? null,
+            other_query: body.otherQuery ?? null,
+            clearance_sections: { create: sectionCreateData },
+            finance_entries: {
+              create: DEFAULT_FINANCE_ENTRIES.map((entry) => ({
+                gl_account: entry.gl_account,
+                particulars: entry.particulars,
+                section_group: entry.section_group,
+              })),
+            },
           },
-        },
-        include: {
-          employee: true,
-          initiated_by_hrbp: { select: { id: true, full_name: true, email: true } },
-          clearance_sections: { include: { clearance_items: true } },
-          finance_entries: true,
-        },
-      })
+          include: {
+            employee: true,
+            initiated_by_hrbp: { select: { id: true, full_name: true, email: true } },
+            clearance_sections: { include: { clearance_items: true } },
+            finance_entries: true,
+          },
+        })
 
-      // Activity log
-      await tx.activityLog.create({
-        data: {
-          clearance_request_id: newClearance.id,
-          actor_id: user.id,
-          action: 'CLEARANCE_INITIATED',
-          details: JSON.stringify({
-            message: `Clearance initiated by HRBP ${user.full_name} for employee ${employee.full_name}`,
-            timestamp: now.toISOString(),
-          }),
-        },
-      })
+        // Activity log
+        await tx.activityLog.create({
+          data: {
+            clearance_request_id: newClearance.id,
+            actor_id: user.id,
+            action: 'CLEARANCE_INITIATED',
+            details: JSON.stringify({
+              message: `Clearance initiated by HRBP ${user.full_name} for employee ${employee.full_name}`,
+              timestamp: now.toISOString(),
+            }),
+          },
+        })
 
-      return newClearance
-    })
+        return newClearance
+      },
+      {
+        timeout: 30000, // Increase timeout to 30 seconds
+      }
+    )
 
     // Notify Section 2 approvers (outside transaction — non-critical)
     try {
