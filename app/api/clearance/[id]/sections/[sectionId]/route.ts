@@ -27,7 +27,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
   let body: {
     action?: string
     note?: string
-    items?: Array<{ id: string; status?: string; comments?: string }>
+    items?: Array<{ id: string; item_key?: string; status?: string; comments?: string }>
   }
   try {
     body = await req.json()
@@ -160,7 +160,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       if (Array.isArray(body.items) && body.items.length > 0) {
         for (const item of body.items) {
           // Prefer section-level assignment if it exists, otherwise use item-level assignment
-          const assignedApproverId = sectionLevelAssignerId ?? itemAssignmentMap.get(item.item_key)
+          const assignedApproverId = sectionLevelAssignerId ?? (item.item_key ? itemAssignmentMap.get(item.item_key) : undefined)
           // If item has an assignment, user must be either that approver OR the section approver
           if (assignedApproverId && assignedApproverId !== user.id && !isAssignedApprover) {
             return NextResponse.json(
@@ -280,7 +280,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       if (Array.isArray(body.items) && body.items.length > 0) {
         for (const item of body.items) {
           // Prefer section-level assignment if it exists, otherwise use item-level assignment
-          const assignedApproverId = sectionLevelAssignerId ?? itemAssignmentMap.get(item.item_key)
+          const assignedApproverId = sectionLevelAssignerId ?? (item.item_key ? itemAssignmentMap.get(item.item_key) : undefined)
           // If item has an assignment, user must be either that approver OR the section approver
           if (assignedApproverId && assignedApproverId !== user.id && !isAssignedApprover) {
             return NextResponse.json(
