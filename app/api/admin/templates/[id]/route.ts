@@ -36,7 +36,6 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         ...(body.phase !== undefined && { phase: body.phase }),
         ...(body.sort_order !== undefined && { sort_order: body.sort_order }),
       },
-      include: { items: { orderBy: { sort_order: 'asc' } } },
     })
     return NextResponse.json(updated)
   } catch (error: any) {
