@@ -307,7 +307,7 @@ export default function ApproverDashboard() {
                           variant={
                             secStatus === 'PENDING' ? 'primary' : 'ghost'
                           }
-                          onClick={() => router.push(`/clearance/${c.id}`)}
+                          onClick={() => router.push(`/clearance/${c.id}?view=approvals`)}
                         >
                           {secStatus === 'PENDING' ? 'Review' : 'View'}
                         </Button>

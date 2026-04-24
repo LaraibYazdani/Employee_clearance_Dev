@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { SECTION_ROLE_MAP } from '@/lib/clearance-config'
-import { findApproverForSection } from '@/lib/clearance-workflow'
 
 // ---------------------------------------------------------------------------
 // GET /api/clearance/[id]
@@ -63,121 +62,122 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       return NextResponse.json({ error: 'Clearance not found' }, { status: 404 })
     }
 
-    // Access control
-    const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
     const isSuperAdmin = user.roles.includes('SUPER_ADMIN')
     const isOwnerHRBP = user.roles.includes('HRBP') && clearance.initiated_by_hrbp_id === user.id
     const isSubjectEmployee = clearance.employee_id === user.id
+    const companyCode = clearance.employee.company_code || '1000'
+    const lineManagerId = clearance.employee.line_manager_id ?? null
 
-    if (!isSuperAdmin && !isOwnerHRBP && !isDeptApprover && !isSubjectEmployee) {
+    // Batch-fetch all approver assignments for this company (single query — no N+1)
+    const allAssignments = await prisma.approverAssignment.findMany({
+      where: { company_code: companyCode },
+      select: { section_key: true, item_key: true, approver_id: true },
+    })
+
+    // Build section_key → Map<item_key, approver_id>
+    const assignmentMap = new Map<string, Map<string, string>>()
+    for (const a of allAssignments) {
+      if (!assignmentMap.has(a.section_key)) assignmentMap.set(a.section_key, new Map())
+      assignmentMap.get(a.section_key)!.set(a.item_key, a.approver_id)
+    }
+
+    // Access control — any of: super admin, initiating HRBP, subject employee,
+    // assigned approver in ApproverAssignment, line manager, or has a DEPT_APPROVER role
+    const isAssignedApprover = allAssignments.some((a) => a.approver_id === user.id)
+    const isLineManager = lineManagerId === user.id
+    const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
+
+    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedApprover && !isLineManager && !isDeptApprover) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Server-side can_act computation using fresh DB roles from withAuth
-    const computeCanAct = (s: typeof clearance.clearance_sections[0]): boolean => {
-      if (s.status === 'LOCKED' || s.status !== 'PENDING') return false
-      if (isSuperAdmin) return true
-      if (s.approver_id && s.approver_id === user.id) return true
-      const requiredRole = SECTION_ROLE_MAP[s.section_key]
-      if (requiredRole && user.roles.includes(requiredRole)) return true
-      return false
-    }
+    // Batch-fetch all approver names (single query)
+    const approverIdSet = new Set(allAssignments.map((a) => a.approver_id))
+    if (lineManagerId) approverIdSet.add(lineManagerId)
+    const approverIdList = Array.from(approverIdSet)
+    const approverUsers =
+      approverIdList.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: approverIdList } },
+            select: { id: true, full_name: true },
+          })
+        : []
+    const approverNameMap = new Map(approverUsers.map((u) => [u.id, u.full_name]))
 
-    // Fetch section labels from templates
-    const companyCode = clearance.employee.company_code || '1000'
-    const sectionLabelMap = new Map<string, string>()
+    // Fetch section labels
     const templates = await prisma.clearanceSectionTemplate.findMany({
       where: { company_code: companyCode },
       select: { section_key: true, label: true },
     })
-    templates.forEach((t) => {
-      sectionLabelMap.set(t.section_key, t.label)
-    })
+    const sectionLabelMap = new Map(templates.map((t) => [t.section_key, t.label]))
 
-    // Dynamically resolve current approver for each section
-    const sections = await Promise.all(
-      clearance.clearance_sections.map(async (s) => {
-        const currentApproverId = await findApproverForSection(
-          s.section_key,
-          clearance.employee_id,
-          companyCode
-        )
+    // Build sections with corrected can_act, live approver names, and item-level assignments
+    const sections = clearance.clearance_sections.map((s) => {
+      const sectionItems = assignmentMap.get(s.section_key) ?? new Map<string, string>()
+      const sectionLevelApproverId = sectionItems.get('section') ?? null
 
-        let currentApproverName: string | null = null
-        if (currentApproverId) {
-          const approver = await prisma.user.findUnique({
-            where: { id: currentApproverId },
-            select: { full_name: true },
-          })
-          currentApproverName = approver?.full_name ?? null
-        }
+      // Section-level display approver (shown in summary panel / section header)
+      let displayApproverId: string | null = null
+      let displayApproverName: string | null = null
+      if (s.section_key === 'DEPT_HEAD') {
+        displayApproverId = lineManagerId
+        displayApproverName = lineManagerId ? (approverNameMap.get(lineManagerId) ?? null) : null
+      } else if (sectionLevelApproverId) {
+        displayApproverId = sectionLevelApproverId
+        displayApproverName = approverNameMap.get(sectionLevelApproverId) ?? null
+      }
 
-        // Fetch item-level assignments for this section
-        const itemAssignments = await prisma.approverAssignment.findMany({
-          where: { 
-            section_key: s.section_key,
-            company_code: companyCode,
-          },
-          select: { item_key: true, approver_id: true },
-        })
-
-        const itemAssignmentMap = new Map<string, string>()
-        itemAssignments.forEach((a) => {
-          itemAssignmentMap.set(a.item_key, a.approver_id)
-        })
-
-        // Check if there's a section-level assignment (overrides individual item assignments)
-        const sectionLevelAssignerId = itemAssignmentMap.get('section')
-
-        // Enhance items with assignment info
-        const itemsWithAssignments = await Promise.all(
-          s.clearance_items.map(async (item) => {
-            // Prefer section-level assignment if it exists, otherwise use item-level assignment
-            const assignedApproverId = sectionLevelAssignerId ?? itemAssignmentMap.get(item.item_key)
-            let assignedApproverName: string | null = null
-            if (assignedApproverId) {
-              const assignedApprover = await prisma.user.findUnique({
-                where: { id: assignedApproverId },
-                select: { full_name: true },
-              })
-              assignedApproverName = assignedApprover?.full_name ?? null
-            }
-            return {
-              ...item,
-              assigned_approver_id: assignedApproverId,
-              assigned_approver_name: assignedApproverName,
-            }
-          })
-        )
-
-        // Compute can_act using the CURRENT (dynamically resolved) approver, not the cached one
-        const canAct = (): boolean => {
-          if (s.status === 'LOCKED' || s.status !== 'PENDING') return false
-          if (isSuperAdmin) return true
-          if (currentApproverId && currentApproverId === user.id) return true
-          const requiredRole = SECTION_ROLE_MAP[s.section_key]
-          if (requiredRole && user.roles.includes(requiredRole)) return true
-          return false
-        }
-
+      // Enhance items with live assignment info
+      const items = s.clearance_items.map((item) => {
+        const assignedApproverId =
+          sectionLevelApproverId ?? sectionItems.get(item.item_key) ?? null
+        const assignedApproverName = assignedApproverId
+          ? (approverNameMap.get(assignedApproverId) ?? null)
+          : null
         return {
-          ...s,
-          label: sectionLabelMap.get(s.section_key),
-          approver_id: currentApproverId || s.approver_id,
-          approver_name: currentApproverName || s.approver_name,
-          items: itemsWithAssignments,
-          can_act: canAct(),
+          ...item,
+          assigned_approver_id: assignedApproverId ?? undefined,
+          assigned_approver_name: assignedApproverName ?? undefined,
         }
       })
-    )
 
-    // Normalize Prisma relation names to match frontend types
-    const normalized = {
-      ...clearance,
-      sections,
-    }
+      // Compute can_act from live ApproverAssignment data — NOT from stale section.approver_id
+      const canAct = (): boolean => {
+        if (s.status === 'LOCKED' || s.status !== 'PENDING') return false
+        if (isSuperAdmin) return true
 
-    return NextResponse.json(normalized)
+        // DEPT_HEAD section: only the employee's line manager can approve
+        if (s.section_key === 'DEPT_HEAD') return lineManagerId === user.id
+
+        if (sectionItems.size === 0) {
+          // No assignments configured → fall back to role-based check
+          const requiredRole = SECTION_ROLE_MAP[s.section_key]
+          return requiredRole ? user.roles.includes(requiredRole) : false
+        }
+
+        if (sectionLevelApproverId) {
+          // Section-level assignment: only that specific user can approve the whole section
+          return sectionLevelApproverId === user.id
+        }
+
+        // Item-level assignments: user can act if they are assigned to at least one item
+        for (const approverId of Array.from(sectionItems.values())) {
+          if (approverId === user.id) return true
+        }
+        return false
+      }
+
+      return {
+        ...s,
+        label: sectionLabelMap.get(s.section_key),
+        approver_id: displayApproverId ?? s.approver_id,
+        approver_name: displayApproverName ?? s.approver_name,
+        items,
+        can_act: canAct(),
+      }
+    })
+
+    return NextResponse.json({ ...clearance, sections })
   } catch (error) {
     console.error('[GET /api/clearance/[id]] error:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

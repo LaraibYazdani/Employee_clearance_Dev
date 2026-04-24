@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -113,8 +113,10 @@ function ActivityItem({ item }: { item: Notification }) {
 export default function ClearanceDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user, token, refreshUser } = useAuth()
   const id = params.id as string
+  const isApprovalsView = searchParams.get('view') === 'approvals'
 
   const [clearance, setClearance] = useState<ClearanceRequest | null>(null)
   const [activity, setActivity] = useState<Notification[]>([])
@@ -139,14 +141,17 @@ export default function ClearanceDetailPage() {
       const data: ClearanceRequest = await res.json()
       setClearance(data)
       if (!activeSection && data.sections && data.sections.length > 0) {
-        setActiveSection(data.sections[0].section_key)
+        const visible = isApprovalsView
+          ? data.sections.filter((s) => s.can_act)
+          : data.sections
+        setActiveSection((visible[0] ?? data.sections[0]).section_key)
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error loading clearance')
     } finally {
       setLoading(false)
     }
-  }, [token, id, authHeaders, activeSection])
+  }, [token, id, authHeaders, activeSection, isApprovalsView])
 
   const fetchActivity = useCallback(async () => {
     if (!token) return
@@ -226,7 +231,9 @@ export default function ClearanceDetailPage() {
       : false
 
   const sections = clearance?.sections ?? []
-  const currentSection = sections.find((s) => s.section_key === activeSection)
+  // In approvals view, only show sections where the current user can act
+  const visibleSections = isApprovalsView ? sections.filter((s) => s.can_act) : sections
+  const currentSection = visibleSections.find((s) => s.section_key === activeSection)
 
   // Use server-computed can_act flag — avoids stale client-side role issues
   // for dual-role users (e.g. HRBP who is also DEPT_APPROVER_IT)
@@ -376,9 +383,9 @@ export default function ClearanceDetailPage() {
             {/* Tab bar */}
             <div className="border-b border-gray-100 overflow-x-auto">
               <nav className="flex px-4 min-w-max" aria-label="Section tabs">
-                {sections.map((sec) => {
+                {visibleSections.map((sec) => {
                   const isActive = activeSection === sec.section_key
-                  const isUserSection = isDeptApprover && userSectionKey === sec.section_key
+                  const isUserSection = sec.can_act === true
                   return (
                     <button
                       key={sec.section_key}

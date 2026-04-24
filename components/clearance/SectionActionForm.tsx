@@ -255,14 +255,15 @@ export default function SectionActionForm({
 
   const visibleItems = useMemo(() => {
     if (!user) return items
+    // Super admins always see everything
+    if (user.roles.includes('SUPER_ADMIN')) return items
     const hasItemLevelAssignments = items.some((item) => item.assigned_approver_id)
-    if (hasItemLevelAssignments) {
-      return items.filter(
-        (item) => item.assigned_approver_id === user.id || section.can_act
-      )
-    }
-    return items
-  }, [items, user, section.can_act])
+    if (!hasItemLevelAssignments) return items
+    // Show items assigned to this user; items with no assignment are also shown
+    return items.filter(
+      (item) => !item.assigned_approver_id || item.assigned_approver_id === user.id
+    )
+  }, [items, user])
 
   const updateItemStatus = (id: string, status: ItemStatus) => {
     setItems((prev) =>
@@ -316,7 +317,7 @@ export default function SectionActionForm({
       const visibleItemIds = new Set(visibleItems.map((i) => i.id))
       const submitItems = items
         .filter((i) => visibleItemIds.has(i.id))
-        .map((i) => ({ id: i.id, status: i.localStatus, comments: i.localComments }))
+        .map((i) => ({ id: i.id, item_key: i.item_key, status: i.localStatus, comments: i.localComments }))
 
       const res = await fetch(`/api/clearance/${clearanceId}/sections/${section.id}`, {
         method: 'PATCH',
