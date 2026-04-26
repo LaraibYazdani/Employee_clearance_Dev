@@ -44,7 +44,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
   }
 
   try {
-    // Fetch section with its parent clearance (including employee company_code)
+    // Fetch section with its parent clearance (including employee info for line-manager check)
     const section = await prisma.clearanceSection.findUnique({
       where: { id: sectionId },
       include: {
@@ -53,7 +53,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
             employee_id: true,
             initiated_by_hrbp_id: true,
             employee: {
-              select: { company_code: true },
+              select: { company_code: true, line_manager_id: true },
             },
           },
         },
@@ -68,29 +68,21 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       return NextResponse.json({ error: 'Section does not belong to this clearance' }, { status: 400 })
     }
 
-    // Extract company code for filtering assignments
     const companyCode = section.clearance_request.employee?.company_code || '1000'
+    const employeeLineManagerId = section.clearance_request.employee?.line_manager_id ?? null
 
-    // Clearance-level access control
-    // Users can only access if they are:
-    // 1. Super Admin, OR
-    // 2. Subject Employee, OR
-    // 3. Initiating HRBP, OR
-    // 4. Assigned approver for THIS specific clearance (must be assigned to at least one section)
     const isSuperAdmin = user.roles.includes('SUPER_ADMIN')
     const isOwnerHRBP = user.roles.includes('HRBP') && section.clearance_request.initiated_by_hrbp_id === user.id
     const isSubjectEmployee = section.clearance_request.employee_id === user.id
 
-    // Check if user is assigned to any section in this clearance
-    const isAssignedToAnySectionInClearance = await prisma.clearanceSection.findFirst({
-      where: {
-        clearance_request_id: clearanceId,
-        approver_id: user.id,
-      },
+    // Clearance-level access: is user assigned to any item in this clearance's company?
+    const hasAnyAssignment = await prisma.approverAssignment.findFirst({
+      where: { company_code: companyCode, approver_id: user.id },
       select: { id: true },
     })
+    const isLineManagerForEmployee = employeeLineManagerId === user.id
 
-    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedToAnySectionInClearance) {
+    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !hasAnyAssignment && !isLineManagerForEmployee) {
       return NextResponse.json({ error: 'Forbidden: You cannot access this clearance' }, { status: 403 })
     }
 
@@ -108,72 +100,72 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       return NextResponse.json({ error: 'Section is not in a PENDING state' }, { status: 409 })
     }
 
-    // Validate the user has the correct role for this section
     const requiredRole = SECTION_ROLE_MAP[section.section_key]
     if (!requiredRole) {
       return NextResponse.json({ error: 'Unknown section key' }, { status: 400 })
     }
 
-    // For DEPT_HEAD, the approver is the specific employee's line manager
-    // We check by approver_id match rather than role
-    const isDeptHead = section.section_key === 'DEPT_HEAD'
     const hasRole = user.roles.includes(requiredRole)
-    const isAssignedApprover = section.approver_id === user.id
 
-    if (!hasRole && !isAssignedApprover) {
+    // Live assignment check — never trust the stale section.approver_id column
+    // For DEPT_HEAD: approver is the employee's line manager
+    // For all others: check ApproverAssignment table directly
+    let isAssignedApprover = false
+    if (section.section_key === 'DEPT_HEAD') {
+      isAssignedApprover = employeeLineManagerId === user.id
+    } else {
+      const liveAssignment = await prisma.approverAssignment.findFirst({
+        where: {
+          company_code: companyCode,
+          section_key: section.section_key,
+          approver_id: user.id,
+        },
+        select: { id: true },
+      })
+      isAssignedApprover = !!liveAssignment
+    }
+
+    if (!isSuperAdmin && !hasRole && !isAssignedApprover) {
       return NextResponse.json(
         { error: 'Forbidden', message: 'You are not authorized to action this section' },
         { status: 403 }
       )
     }
 
-    // For non-DEPT_HEAD sections, the user must either have the role OR be the assigned approver
-    // For DEPT_HEAD, we rely solely on assigned approver check since role is DEPT_APPROVER_HEAD
-    if (!isDeptHead && !hasRole) {
-      return NextResponse.json(
-        { error: 'Forbidden', message: 'You do not have the required role for this section' },
-        { status: 403 }
-      )
-    }
-
     const now = nowPKT()
 
-    if (body.action === 'APPROVE') {
-      // Check if there are item-level assignments for this section
-      const itemAssignments = await prisma.approverAssignment.findMany({
-        where: { 
-          section_key: section.section_key,
-          company_code: companyCode,
-        },
-        select: { item_key: true, approver_id: true },
-      })
+    // Shared: fetch item-level assignments for this section (used in both APPROVE and DENY)
+    const itemAssignments = await prisma.approverAssignment.findMany({
+      where: { section_key: section.section_key, company_code: companyCode },
+      select: { item_key: true, approver_id: true },
+    })
+    const itemAssignmentMap = new Map<string, string>()
+    itemAssignments.forEach((a) => itemAssignmentMap.set(a.item_key, a.approver_id))
+    const sectionLevelAssignerId = itemAssignmentMap.get('section') ?? null
 
-      const itemAssignmentMap = new Map<string, string>()
-      itemAssignments.forEach((a) => {
-        itemAssignmentMap.set(a.item_key, a.approver_id)
-      })
-
-      // Check if there's a section-level assignment (overrides individual item assignments)
-      const sectionLevelAssignerId = itemAssignmentMap.get('section')
-
-      // For item-level assignments: validate user can only edit their assigned items
-      if (Array.isArray(body.items) && body.items.length > 0) {
-        for (const item of body.items) {
-          // Prefer section-level assignment if it exists, otherwise use item-level assignment
-          const assignedApproverId = sectionLevelAssignerId ?? (item.item_key ? itemAssignmentMap.get(item.item_key) : undefined)
-          // If item has an assignment, user must be either that approver OR the section approver
-          if (assignedApproverId && assignedApproverId !== user.id && !isAssignedApprover) {
-            return NextResponse.json(
-              {
-                error: 'Forbidden',
-                message: `You are not authorized to approve this item. It is assigned to another approver.`,
-              },
-              { status: 403 }
-            )
-          }
+    // Per-item authorization: section-level approver or super admin can act on any item;
+    // item-level approvers can only act on their own items
+    const authorizeItems = (items: typeof body.items): NextResponse | null => {
+      if (!Array.isArray(items) || items.length === 0) return null
+      if (isSuperAdmin) return null
+      for (const item of items) {
+        const effectiveApprover =
+          sectionLevelAssignerId ?? (item.item_key ? itemAssignmentMap.get(item.item_key) : undefined)
+        if (effectiveApprover && effectiveApprover !== user.id) {
+          return NextResponse.json(
+            { error: 'Forbidden', message: 'You are not authorized to act on this item. It is assigned to another approver.' },
+            { status: 403 }
+          )
         }
+      }
+      return null
+    }
 
-        // Update items with user's submissions
+    if (body.action === 'APPROVE') {
+      const itemAuthError = authorizeItems(body.items)
+      if (itemAuthError) return itemAuthError
+
+      if (Array.isArray(body.items) && body.items.length > 0) {
         await Promise.all(
           body.items.map((item) => {
             const allowedStatuses = ['APPROVED', 'NA', 'PENDING']
@@ -192,24 +184,19 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         )
       }
 
-      // Check if ALL items are APPROVED before allowing section approval
+      // All items must be APPROVED/NA before the section can be approved
       const allItems = await prisma.clearanceItem.findMany({
         where: { clearance_section_id: sectionId },
         select: { status: true },
       })
-
       const allApproved = allItems.every((item) => item.status === 'APPROVED' || item.status === 'NA')
       if (!allApproved) {
         return NextResponse.json(
-          {
-            error: 'Cannot approve section',
-            message: 'All items must be approved before the section can be approved.',
-          },
+          { error: 'Cannot approve section', message: 'All items must be approved before the section can be approved.' },
           { status: 409 }
         )
       }
 
-      // Update section to APPROVED
       await prisma.clearanceSection.update({
         where: { id: sectionId },
         data: {
@@ -221,7 +208,6 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         },
       })
 
-      // Activity log
       await prisma.activityLog.create({
         data: {
           clearance_request_id: clearanceId,
@@ -237,21 +223,16 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         },
       })
 
-      // Notify HRBP
       try {
         await notifyHRBPSectionApproved(clearanceId, section.section_key, user.full_name)
       } catch (e) {
         console.error('[PATCH section] notifyHRBPSectionApproved error:', e)
       }
-
-      // Check if Section 3 should be unlocked (all Section 2 approved)
       try {
         await checkAndUnlockSection3(clearanceId)
       } catch (e) {
         console.error('[PATCH section] checkAndUnlockSection3 error:', e)
       }
-
-      // Check if entire clearance is now complete
       try {
         await checkAndCompleteClearance(clearanceId)
       } catch (e) {
@@ -259,41 +240,11 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       }
 
     } else {
-      // DENY action: check item-level authorization
-      const itemAssignments = await prisma.approverAssignment.findMany({
-        where: { 
-          section_key: section.section_key,
-          company_code: companyCode,
-        },
-        select: { item_key: true, approver_id: true },
-      })
+      // DENY
+      const itemAuthError = authorizeItems(body.items)
+      if (itemAuthError) return itemAuthError
 
-      const itemAssignmentMap = new Map<string, string>()
-      itemAssignments.forEach((a) => {
-        itemAssignmentMap.set(a.item_key, a.approver_id)
-      })
-
-      // Check if there's a section-level assignment (overrides individual item assignments)
-      const sectionLevelAssignerId = itemAssignmentMap.get('section')
-
-      // For item-level assignments: validate user can only edit their assigned items
       if (Array.isArray(body.items) && body.items.length > 0) {
-        for (const item of body.items) {
-          // Prefer section-level assignment if it exists, otherwise use item-level assignment
-          const assignedApproverId = sectionLevelAssignerId ?? (item.item_key ? itemAssignmentMap.get(item.item_key) : undefined)
-          // If item has an assignment, user must be either that approver OR the section approver
-          if (assignedApproverId && assignedApproverId !== user.id && !isAssignedApprover) {
-            return NextResponse.json(
-              {
-                error: 'Forbidden',
-                message: `You are not authorized to act on this item. It is assigned to another approver.`,
-              },
-              { status: 403 }
-            )
-          }
-        }
-
-        // Save item statuses/comments before denying
         await Promise.all(
           body.items.map((item) => {
             const allowedStatuses = ['APPROVED', 'NA', 'PENDING']
@@ -309,7 +260,6 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         )
       }
 
-      // DENY
       await prisma.clearanceSection.update({
         where: { id: sectionId },
         data: {
@@ -321,13 +271,11 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         },
       })
 
-      // Update clearance status to PENDING_HRBP
       await prisma.clearanceRequest.update({
         where: { id: clearanceId },
         data: { status: 'PENDING_HRBP' },
       })
 
-      // Activity log
       await prisma.activityLog.create({
         data: {
           clearance_request_id: clearanceId,
@@ -343,7 +291,6 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         },
       })
 
-      // Notify HRBP
       try {
         await notifyHRBPSectionDenied(clearanceId, section.section_key, user.full_name, body.note!)
       } catch (e) {
@@ -351,7 +298,6 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       }
     }
 
-    // Return updated section
     const updatedSection = await prisma.clearanceSection.findUnique({
       where: { id: sectionId },
       include: { clearance_items: true },

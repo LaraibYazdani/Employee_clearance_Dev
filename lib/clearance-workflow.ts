@@ -126,10 +126,11 @@ export async function findApproverForSection(
     return employee?.line_manager_id ?? null
   }
 
-  // Check ApproverAssignment table first (if company code is known)
+  // Check for a section-level assignment only (item_key = 'section')
+  // Item-level assignments are per-item and do not designate a single section approver
   if (companyCode) {
     const assignment = await prisma.approverAssignment.findFirst({
-      where: { company_code: companyCode, section_key: sectionKey },
+      where: { company_code: companyCode, section_key: sectionKey, item_key: 'section' },
       select: { approver_id: true },
     })
     if (assignment) return assignment.approver_id

@@ -46,14 +46,30 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
     } else if (user.roles.includes('HRBP')) {
       where.initiated_by_hrbp_id = user.id
     } else if (isDeptApprover) {
-      // Find sections where this approver has a pending/denied task
-      where.clearance_sections = {
-        some: {
-          approver_id: user.id,
-          status: { in: ['PENDING', 'DENIED'] },
-        },
+      // Find company codes where this user has live ApproverAssignment rows
+      const liveAssignments = await prisma.approverAssignment.findMany({
+        where: { approver_id: user.id },
+        select: { company_code: true },
+        distinct: ['company_code'],
+      })
+      const assignedCompanyCodes = liveAssignments.map((a) => a.company_code)
+
+      // Show clearances for:
+      // 1. Companies where user has item/section assignments (live)
+      // 2. Clearances where user is the employee's line manager (DEPT_HEAD)
+      // 3. Legacy: stale section.approver_id match (for pre-assignment-table clearances)
+      const orConditions: any[] = []
+      if (assignedCompanyCodes.length > 0) {
+        orConditions.push({ employee: { company_code: { in: assignedCompanyCodes } } })
       }
-      // Also ensure the clearance itself is active
+      orConditions.push({ employee: { line_manager_id: user.id } })
+      orConditions.push({
+        clearance_sections: {
+          some: { approver_id: user.id, status: { in: ['PENDING', 'DENIED'] } },
+        },
+      })
+
+      where.OR = orConditions
       where.status = { in: ['IN_PROGRESS', 'PENDING_HRBP'] }
     } else {
       // EMPLOYEE / unverified HRBP — default shows clearances they initiated;
