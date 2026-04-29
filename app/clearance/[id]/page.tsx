@@ -10,10 +10,9 @@ import SectionActionForm from '@/components/clearance/SectionActionForm'
 import HRBPIntervention from '@/components/clearance/HRBPIntervention'
 import FinanceSection from '@/components/clearance/FinanceSection'
 import { useAuth } from '@/lib/auth-context'
-import { ClearanceRequest, ClearanceSection, Notification } from '@/types'
+import { ClearanceRequest, ClearanceSection } from '@/types'
 import {
   formatDatePKT,
-  formatRelativeTime,
   getUserSectionKey,
   getSectionLabel,
   hasRole,
@@ -77,37 +76,6 @@ function QueryBadge({ label, value }: { label: string; value?: string | null }) 
 }
 
 /* ─────────────────────────────────────────────
-   Activity log item
-───────────────────────────────────────────── */
-function ActivityItem({ item }: { item: Notification }) {
-  return (
-    <div className="flex gap-3 py-2">
-      <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center shrink-0 mt-0.5">
-        <svg
-          className="w-3.5 h-3.5 text-indigo-600"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-          />
-        </svg>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-gray-700 leading-relaxed">{item.message}</p>
-        <p className="text-xs text-gray-400 mt-0.5">
-          {formatRelativeTime(item.created_at)}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-/* ─────────────────────────────────────────────
    Main page
 ───────────────────────────────────────────── */
 export default function ClearanceDetailPage() {
@@ -119,7 +87,6 @@ export default function ClearanceDetailPage() {
   const isApprovalsView = searchParams.get('view') === 'approvals'
 
   const [clearance, setClearance] = useState<ClearanceRequest | null>(null)
-  const [activity, setActivity] = useState<Notification[]>([])
   const [financeEntries, setFinanceEntries] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -153,21 +120,6 @@ export default function ClearanceDetailPage() {
     }
   }, [token, id, authHeaders, activeSection, isApprovalsView])
 
-  const fetchActivity = useCallback(async () => {
-    if (!token) return
-    try {
-      const res = await fetch(`/api/clearance/${id}/activity`, {
-        headers: authHeaders(),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setActivity(Array.isArray(data) ? data.slice(0, 5) : [])
-      }
-    } catch {
-      // Non-critical — ignore
-    }
-  }, [token, id, authHeaders])
-
   const fetchFinanceEntries = useCallback(async () => {
     if (!token) return
     try {
@@ -188,25 +140,22 @@ export default function ClearanceDetailPage() {
     // block an approver whose role was updated after they logged in
     refreshUser()
     fetchClearance()
-    fetchActivity()
     fetchFinanceEntries()
-  }, [fetchClearance, fetchActivity, fetchFinanceEntries, refreshUser])
+  }, [fetchClearance, fetchFinanceEntries, refreshUser])
 
   // Poll every 30 seconds
   useEffect(() => {
     pollingRef.current = setInterval(() => {
       fetchClearance()
-      fetchActivity()
     }, 30000)
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
-  }, [fetchClearance, fetchActivity])
+  }, [fetchClearance])
 
   const handleRefresh = () => {
     setLoading(true)
     fetchClearance()
-    fetchActivity()
     fetchFinanceEntries()
   }
 
@@ -494,32 +443,6 @@ export default function ClearanceDetailPage() {
             sections={sections}
             onRefresh={handleRefresh}
           />
-
-          {/* Activity log */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-800">
-                Activity Log
-              </h3>
-              <button
-                onClick={() => router.push(`/clearance/${id}/activity`)}
-                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
-              >
-                View All
-              </button>
-            </div>
-            <div className="px-4 divide-y divide-gray-50">
-              {activity.length === 0 ? (
-                <p className="text-xs text-gray-400 py-4 text-center">
-                  No activity yet.
-                </p>
-              ) : (
-                activity.map((item) => (
-                  <ActivityItem key={item.id} item={item} />
-                ))
-              )}
-            </div>
-          </div>
 
           {/* PDF download (only when completed) */}
           {clearance.status === 'COMPLETED' && (
