@@ -165,6 +165,7 @@ function ClearancesTab({ token }: { token: string }) {
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Filters
@@ -213,6 +214,34 @@ function ClearancesTab({ token }: { token: string }) {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     fetchClearances(1)
+  }
+
+  const handleDelete = async (id: string, employeeName: string) => {
+    const confirmed = window.confirm(
+      `Permanently delete the clearance for ${employeeName}?\n\nThis will remove all sections, items, finance entries, and notifications associated with it. This cannot be undone.`
+    )
+    if (!confirmed) return
+
+    setDeleteLoading(id)
+    try {
+      const res = await fetch('/api/admin/clearances', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error ?? 'Delete failed')
+      }
+      fetchClearances(page)
+    } catch (e: any) {
+      alert(e.message ?? 'Delete failed')
+    } finally {
+      setDeleteLoading(null)
+    }
   }
 
   const handleAction = async (id: string, action: 'FORCE_COMPLETE' | 'CANCEL') => {
@@ -432,6 +461,13 @@ function ClearancesTab({ token }: { token: string }) {
                           </button>
                         </>
                       )}
+                      <button
+                        className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-900 text-white border border-gray-900 hover:bg-gray-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        disabled={deleteLoading === c.id}
+                        onClick={() => handleDelete(c.id, c.employee?.full_name ?? 'this employee')}
+                      >
+                        {deleteLoading === c.id ? '...' : 'Delete'}
+                      </button>
                     </div>
                   </td>
                 </tr>

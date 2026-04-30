@@ -87,6 +87,50 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
 })
 
 // ---------------------------------------------------------------------------
+// DELETE /api/admin/clearances
+// Body: { id }
+// Hard-deletes the clearance and all child records (cascade). SUPER_ADMIN only.
+// ---------------------------------------------------------------------------
+export const DELETE = withAuth(async (req: AuthenticatedRequest) => {
+  const user = req.user!
+
+  if (!user.roles.includes('SUPER_ADMIN')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  let body: { id?: string }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const { id } = body
+
+  if (!id) {
+    return NextResponse.json({ error: 'id is required' }, { status: 400 })
+  }
+
+  try {
+    const clearance = await prisma.clearanceRequest.findUnique({
+      where: { id },
+      select: { id: true, employee: { select: { full_name: true } } },
+    })
+
+    if (!clearance) {
+      return NextResponse.json({ error: 'Clearance not found' }, { status: 404 })
+    }
+
+    await prisma.clearanceRequest.delete({ where: { id } })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[DELETE /api/admin/clearances] error:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // PATCH /api/admin/clearances
 // Body: { id, action: 'FORCE_COMPLETE' | 'CANCEL' }
 // SUPER_ADMIN only
