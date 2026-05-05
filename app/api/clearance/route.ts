@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { DEFAULT_FINANCE_ENTRIES } from '@/lib/clearance-config'
 import { findApproverForSection } from '@/lib/clearance-workflow'
 import { getTemplatesForCompany } from '@/lib/clearance-templates'
-import { notifySection2Approvers } from '@/lib/notifications'
+import { notifySection2Approvers, notifyEmployeeClearanceInitiated } from '@/lib/notifications'
 import { getHRBP } from '@/lib/successfactors'
 
 // PKT = UTC+5
@@ -303,6 +303,13 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
         timeout: 30000, // Increase timeout to 30 seconds
       }
     )
+
+    // Notify employee + HRBP that clearance has been initiated (non-critical)
+    try {
+      await notifyEmployeeClearanceInitiated(clearance.id)
+    } catch (notifyErr) {
+      console.error('[POST /api/clearance] employee notification error:', notifyErr)
+    }
 
     // Notify Section 2 approvers (outside transaction — non-critical)
     try {

@@ -1,9 +1,9 @@
 import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/prisma'
-import { SECTION_LABELS, SECTION_2_KEYS, SECTION_3_KEYS, SECTION_ROLE_MAP } from '@/lib/clearance-config'
+import { SECTION_LABELS, SECTION_2_KEYS, SECTION_3_KEYS } from '@/lib/clearance-config'
 
 // ---------------------------------------------------------------------------
-// Nodemailer transport (configured via environment variables)
+// Nodemailer transport
 // ---------------------------------------------------------------------------
 
 function createTransport() {
@@ -22,9 +22,6 @@ function createTransport() {
 // Base helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Creates an in-app notification record for a recipient.
- */
 export async function createNotification(params: {
   recipientId: string
   clearanceRequestId: string
@@ -41,10 +38,6 @@ export async function createNotification(params: {
   })
 }
 
-/**
- * Sends an email via Nodemailer. Errors are logged but never thrown so that
- * a failed email never blocks the main request flow.
- */
 export async function sendEmail(params: {
   to: string
   subject: string
@@ -64,40 +57,104 @@ export async function sendEmail(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Email template helper
+// Email template wrapper — Packages Group branding
 // ---------------------------------------------------------------------------
 
-function emailWrapper(title: string, body: string): string {
+function emailWrapper(body: string): string {
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb; padding: 24px;">
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f3f4f6; padding: 24px;">
       <div style="background: #ffffff; border-radius: 8px; padding: 32px; border: 1px solid #e5e7eb;">
-        <h2 style="color: #111827; margin: 0 0 16px 0; font-size: 20px;">${title}</h2>
         ${body}
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
-        <p style="color: #6b7280; font-size: 12px; margin: 0;">
-          This is an automated message from the Employee Clearance Portal. Please do not reply to this email.
+        <p style="color: #374151; font-size: 14px; margin: 0 0 2px 0;">Regards,</p>
+        <p style="color: #111827; font-size: 14px; font-weight: 600; margin: 0 0 16px 0;">Packages Group</p>
+        <p style="color: #9ca3af; font-size: 11px; margin: 0;">
+          This is a system-generated email from the Employee Clearance Portal. Please do not reply directly to this message.
         </p>
       </div>
     </div>
   `
 }
 
-function detailRow(label: string, value: string): string {
-  return `<tr>
-    <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 14px; white-space: nowrap;">${label}</td>
-    <td style="padding: 6px 0; color: #111827; font-size: 14px;">${value}</td>
-  </tr>`
+function ctaButton(href: string, label: string, color = '#2563eb'): string {
+  return `<p style="margin: 24px 0 0 0;">
+    <a href="${href}"
+       style="background: ${color}; color: #ffffff; padding: 10px 24px; border-radius: 6px;
+              text-decoration: none; font-size: 14px; display: inline-block;">
+      ${label}
+    </a>
+  </p>`
 }
 
 // ---------------------------------------------------------------------------
-// Domain-level notification functions
+// Template 1 — Employee: Clearance Initiated (also CC'd to HRBP)
 // ---------------------------------------------------------------------------
 
-/**
- * Notifies all Section 2 approvers that a new clearance has been initiated.
- * Uses live ApproverAssignment rows — never the stale section.approver_id column.
- * DEPT_HEAD is resolved via the employee's line_manager_id.
- */
+export async function notifyEmployeeClearanceInitiated(clearanceId: string): Promise<void> {
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: {
+      employee: { select: { id: true, full_name: true, email: true } },
+      initiated_by_hrbp: { select: { id: true, full_name: true, email: true } },
+    },
+  })
+  if (!clearance) return
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const { employee, initiated_by_hrbp: hrbp } = clearance
+
+  // Notify employee
+  const message = `Your clearance process has been initiated by HRBP ${hrbp.full_name}.`
+  await createNotification({
+    recipientId: employee.id,
+    clearanceRequestId: clearanceId,
+    type: 'CLEARANCE_INITIATED_EMPLOYEE',
+    message,
+  })
+
+  const employeeHtml = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${employee.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      Your clearance process has been initiated by HRBP.
+    </p>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      You may log in to the clearance portal to review the status and progress.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Clearance Status')}
+  `)
+
+  await sendEmail({
+    to: employee.email,
+    subject: `Your Clearance Has Been Initiated`,
+    html: employeeHtml,
+  })
+
+  // CC the HRBP
+  const hrbpHtml = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${hrbp.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      This is a confirmation that you have successfully initiated a clearance process for
+      <strong>${employee.full_name}</strong>.
+    </p>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      You may log in to the clearance portal to track the progress.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Clearance')}
+  `)
+
+  await sendEmail({
+    to: hrbp.email,
+    subject: `Clearance Initiated for ${employee.full_name}`,
+    html: hrbpHtml,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Template 2 — Clearing Agent: Section 2 approvers notified on initiation
+// Uses live ApproverAssignment rows — never the stale section.approver_id column.
+// DEPT_HEAD is resolved via the employee's line_manager_id.
+// ---------------------------------------------------------------------------
+
 export async function notifySection2Approvers(clearanceId: string): Promise<void> {
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
@@ -106,16 +163,12 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
       initiated_by_hrbp: { select: { full_name: true } },
     },
   })
-
   if (!clearance) return
 
   const companyCode = clearance.employee.company_code
   const section2Keys = SECTION_2_KEYS as readonly string[]
-
-  // Build a map of section_key → approver user IDs to notify
   const sectionApproverMap = new Map<string, Set<string>>()
 
-  // Fetch all section-level assignments for this company + section2 keys
   if (companyCode) {
     const assignments = await prisma.approverAssignment.findMany({
       where: {
@@ -131,23 +184,24 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
     }
   }
 
-  // DEPT_HEAD → line manager
   if (clearance.employee.line_manager_id) {
     sectionApproverMap.set('DEPT_HEAD', new Set([clearance.employee.line_manager_id]))
   }
 
-  // Notify each unique approver per section
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
   for (const sectionKey of section2Keys) {
     const approverIds = sectionApproverMap.get(sectionKey)
     if (!approverIds || approverIds.size === 0) continue
 
-    const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
-
     for (const approverId of Array.from(approverIds)) {
-      const approver = await prisma.user.findUnique({ where: { id: approverId }, select: { id: true, email: true, full_name: true } })
+      const approver = await prisma.user.findUnique({
+        where: { id: approverId },
+        select: { id: true, email: true, full_name: true },
+      })
       if (!approver) continue
 
-      const message = `A new clearance request has been initiated for ${clearance.employee.full_name}. Your action is required for: ${sectionLabel}.`
+      const message = `A clearance request for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) requires your action.`
 
       await createNotification({
         recipientId: approver.id,
@@ -156,145 +210,32 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
         message,
       })
 
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-      const html = emailWrapper(
-        'New Clearance Request — Action Required',
-        `<p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
-          A new employee clearance request requires your approval.
+      const html = emailWrapper(`
+        <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear All,</p>
+        <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+          A clearance request for <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>
+          requires your action.
         </p>
-        <table style="border-collapse: collapse; width: 100%;">
-          ${detailRow('Employee', clearance.employee.full_name)}
-          ${detailRow('Employee ID', clearance.employee.sf_employee_id)}
-          ${detailRow('Section', sectionLabel)}
-          ${detailRow('Initiated by', clearance.initiated_by_hrbp.full_name)}
-        </table>
-        <p style="margin: 20px 0 0 0;">
-          <a href="${appUrl}/clearance/${clearanceId}?view=approvals"
-             style="background: #2563eb; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px; display: inline-block;">
-            Review Clearance
-          </a>
-        </p>`
-      )
+        <p style="color: #374151; font-size: 14px; margin: 0;">
+          Please log in to the clearance portal and complete your assigned step.
+        </p>
+        ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Complete Your Action')}
+      `)
 
       await sendEmail({
         to: approver.email,
-        subject: `Action Required: Clearance for ${clearance.employee.full_name}`,
+        subject: `Action Required: Clearance for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id})`,
         html,
       })
     }
   }
 }
 
-/**
- * Notifies the HRBP that a section has been approved.
- */
-export async function notifyHRBPSectionApproved(
-  clearanceId: string,
-  sectionKey: string,
-  approverName: string
-): Promise<void> {
-  const clearance = await prisma.clearanceRequest.findUnique({
-    where: { id: clearanceId },
-    include: { employee: true, initiated_by_hrbp: true },
-  })
+// ---------------------------------------------------------------------------
+// Template 2 — Clearing Agent: Section 3 approvers notified when phase 2 is done
+// Uses live ApproverAssignment rows — never the stale section.approver_id column.
+// ---------------------------------------------------------------------------
 
-  if (!clearance) return
-
-  const hrbp = clearance.initiated_by_hrbp
-  const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
-  const message = `${sectionLabel} has been approved by ${approverName} for ${clearance.employee.full_name}'s clearance.`
-
-  await createNotification({
-    recipientId: hrbp.id,
-    clearanceRequestId: clearanceId,
-    type: 'SECTION_APPROVED',
-    message,
-  })
-
-  const html = emailWrapper(
-    'Section Approved',
-    `<p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
-      A section in the clearance request has been approved.
-    </p>
-    <table style="border-collapse: collapse; width: 100%;">
-      ${detailRow('Employee', clearance.employee.full_name)}
-      ${detailRow('Section', sectionLabel)}
-      ${detailRow('Approved by', approverName)}
-    </table>
-    <p style="margin: 20px 0 0 0;">
-      <a href="${process.env.NEXT_PUBLIC_APP_URL ?? ''}/clearance/${clearanceId}"
-         style="background: #2563eb; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px; display: inline-block;">
-        View Clearance
-      </a>
-    </p>`
-  )
-
-  await sendEmail({
-    to: hrbp.email,
-    subject: `Clearance Update: ${sectionLabel} Approved — ${clearance.employee.full_name}`,
-    html,
-  })
-}
-
-/**
- * Notifies the HRBP that a section has been denied.
- */
-export async function notifyHRBPSectionDenied(
-  clearanceId: string,
-  sectionKey: string,
-  approverName: string,
-  comment: string
-): Promise<void> {
-  const clearance = await prisma.clearanceRequest.findUnique({
-    where: { id: clearanceId },
-    include: { employee: true, initiated_by_hrbp: true },
-  })
-
-  if (!clearance) return
-
-  const hrbp = clearance.initiated_by_hrbp
-  const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
-  const message = `${sectionLabel} has been denied by ${approverName} for ${clearance.employee.full_name}'s clearance. Reason: ${comment}`
-
-  await createNotification({
-    recipientId: hrbp.id,
-    clearanceRequestId: clearanceId,
-    type: 'SECTION_DENIED',
-    message,
-  })
-
-  const html = emailWrapper(
-    'Section Denied — Action Required',
-    `<p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
-      A section in the clearance request has been denied and requires your attention.
-    </p>
-    <table style="border-collapse: collapse; width: 100%;">
-      ${detailRow('Employee', clearance.employee.full_name)}
-      ${detailRow('Section', sectionLabel)}
-      ${detailRow('Denied by', approverName)}
-    </table>
-    <div style="margin: 16px 0; padding: 12px 16px; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
-      <p style="margin: 0; color: #991b1b; font-size: 14px;"><strong>Reason:</strong> ${comment}</p>
-    </div>
-    <p style="margin: 20px 0 0 0;">
-      <a href="${process.env.NEXT_PUBLIC_APP_URL ?? ''}/clearance/${clearanceId}"
-         style="background: #dc2626; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px; display: inline-block;">
-        Review &amp; Re-route
-      </a>
-    </p>`
-  )
-
-  await sendEmail({
-    to: hrbp.email,
-    subject: `Action Required: ${sectionLabel} Denied — ${clearance.employee.full_name}`,
-    html,
-  })
-}
-
-/**
- * Notifies Section 3 approvers (OD, HR, Finance) when all Section 2 sections are complete.
- * Uses live ApproverAssignment rows — never the stale section.approver_id column.
- */
 export async function notifySection3Approvers(clearanceId: string): Promise<void> {
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
@@ -303,13 +244,11 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
       initiated_by_hrbp: { select: { full_name: true } },
     },
   })
-
   if (!clearance) return
 
   const companyCode = clearance.employee.company_code
   const section3Keys = SECTION_3_KEYS as readonly string[]
 
-  // Fetch all section-level assignments for section3 keys
   if (!companyCode) return
 
   const assignments = await prisma.approverAssignment.findMany({
@@ -333,13 +272,15 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
     const approverIds = sectionApproverMap.get(sectionKey)
     if (!approverIds || approverIds.size === 0) continue
 
-    const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
-
     for (const approverId of Array.from(approverIds)) {
-      const approver = await prisma.user.findUnique({ where: { id: approverId }, select: { id: true, email: true, full_name: true } })
+      const approver = await prisma.user.findUnique({
+        where: { id: approverId },
+        select: { id: true, email: true, full_name: true },
+      })
       if (!approver) continue
 
-      const message = `All department clearances are complete for ${clearance.employee.full_name}. Your action is now required for: ${sectionLabel}.`
+      const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
+      const message = `A clearance request for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) requires your action for: ${sectionLabel}.`
 
       await createNotification({
         recipientId: approver.id,
@@ -348,88 +289,196 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
         message,
       })
 
-      const html = emailWrapper(
-        'Clearance Ready for Your Review',
-        `<p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
-          All departmental sections have been approved. Your section is now unlocked for review.
+      const html = emailWrapper(`
+        <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear All,</p>
+        <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+          A clearance request for <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>
+          requires your action.
         </p>
-        <table style="border-collapse: collapse; width: 100%;">
-          ${detailRow('Employee', clearance.employee.full_name)}
-          ${detailRow('Employee ID', clearance.employee.sf_employee_id)}
-          ${detailRow('Section', sectionLabel)}
-          ${detailRow('Initiated by', clearance.initiated_by_hrbp.full_name)}
-        </table>
-        <p style="margin: 20px 0 0 0;">
-          <a href="${appUrl}/clearance/${clearanceId}?view=approvals"
-             style="background: #2563eb; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px; display: inline-block;">
-            Review Clearance
-          </a>
-        </p>`
-      )
+        <p style="color: #374151; font-size: 14px; margin: 0;">
+          Please log in to the clearance portal and complete your assigned step.
+        </p>
+        ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Complete Your Action')}
+      `)
 
       await sendEmail({
         to: approver.email,
-        subject: `Action Required: Final Clearance for ${clearance.employee.full_name}`,
+        subject: `Action Required: Clearance for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id})`,
         html,
       })
     }
   }
 }
 
-/**
- * Notifies the HRBP that the clearance is fully complete.
- */
-export async function notifyHRBPCompletion(clearanceId: string): Promise<void> {
+// ---------------------------------------------------------------------------
+// HRBP: Section approved update
+// ---------------------------------------------------------------------------
+
+export async function notifyHRBPSectionApproved(
+  clearanceId: string,
+  sectionKey: string,
+  approverName: string
+): Promise<void> {
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: { employee: true, initiated_by_hrbp: true },
   })
-
   if (!clearance) return
 
   const hrbp = clearance.initiated_by_hrbp
-  const message = `The clearance for ${clearance.employee.full_name} has been fully completed. The PDF is being generated.`
+  const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
+  const message = `${sectionLabel} has been approved by ${approverName} for ${clearance.employee.full_name}'s clearance.`
 
   await createNotification({
     recipientId: hrbp.id,
     clearanceRequestId: clearanceId,
-    type: 'CLEARANCE_COMPLETED',
+    type: 'SECTION_APPROVED',
     message,
   })
 
-  const html = emailWrapper(
-    'Clearance Completed',
-    `<p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
-      The employee clearance process has been successfully completed.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${hrbp.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      <strong>${sectionLabel}</strong> for <strong>${clearance.employee.full_name}</strong>'s
+      clearance has been approved by ${approverName}.
     </p>
-    <table style="border-collapse: collapse; width: 100%;">
-      ${detailRow('Employee', clearance.employee.full_name)}
-      ${detailRow('Employee ID', clearance.employee.sf_employee_id)}
-      ${detailRow('Status', 'COMPLETED')}
-    </table>
-    <p style="color: #374151; font-size: 14px; margin: 16px 0 0 0;">
-      The clearance certificate PDF is being generated and will be available shortly.
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      Please log in to the clearance portal to review the updated status.
     </p>
-    <p style="margin: 20px 0 0 0;">
-      <a href="${process.env.NEXT_PUBLIC_APP_URL ?? ''}/clearance/${clearanceId}"
-         style="background: #16a34a; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px; display: inline-block;">
-        View Clearance
-      </a>
-    </p>`
-  )
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Clearance')}
+  `)
 
   await sendEmail({
     to: hrbp.email,
-    subject: `Clearance Completed: ${clearance.employee.full_name}`,
+    subject: `Clearance Update: ${sectionLabel} Approved — ${clearance.employee.full_name}`,
     html,
   })
 }
 
-/**
- * Notifies the relevant section approver(s) that their section has been re-routed by the HRBP.
- * Uses live ApproverAssignment rows — never the stale section.approver_id column.
- * DEPT_HEAD is resolved via the employee's line_manager_id.
- */
+// ---------------------------------------------------------------------------
+// HRBP: Section denied — action required
+// ---------------------------------------------------------------------------
+
+export async function notifyHRBPSectionDenied(
+  clearanceId: string,
+  sectionKey: string,
+  approverName: string,
+  comment: string
+): Promise<void> {
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: { employee: true, initiated_by_hrbp: true },
+  })
+  if (!clearance) return
+
+  const hrbp = clearance.initiated_by_hrbp
+  const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
+  const message = `${sectionLabel} has been denied by ${approverName} for ${clearance.employee.full_name}'s clearance. Reason: ${comment}`
+
+  await createNotification({
+    recipientId: hrbp.id,
+    clearanceRequestId: clearanceId,
+    type: 'SECTION_DENIED',
+    message,
+  })
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${hrbp.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      <strong>${sectionLabel}</strong> for <strong>${clearance.employee.full_name}</strong>'s
+      clearance has been denied by ${approverName}.
+    </p>
+    <div style="margin: 16px 0; padding: 12px 16px; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
+      <p style="margin: 0; color: #991b1b; font-size: 14px;"><strong>Reason:</strong> ${comment}</p>
+    </div>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      Please log in to the clearance portal to review and re-route the section.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'Review &amp; Re-route', '#dc2626')}
+  `)
+
+  await sendEmail({
+    to: hrbp.email,
+    subject: `Action Required: ${sectionLabel} Denied — ${clearance.employee.full_name}`,
+    html,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Template 4 — HR: Clearance completed (CC: HRBP + Employee)
+// Primary recipient is the HRBP; employee receives a separate copy.
+// ---------------------------------------------------------------------------
+
+export async function notifyHRBPCompletion(clearanceId: string): Promise<void> {
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: {
+      employee: { select: { id: true, full_name: true, sf_employee_id: true, email: true } },
+      initiated_by_hrbp: { select: { id: true, full_name: true, email: true } },
+    },
+  })
+  if (!clearance) return
+
+  const { employee, initiated_by_hrbp: hrbp } = clearance
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
+  // In-app notification for HRBP
+  await createNotification({
+    recipientId: hrbp.id,
+    clearanceRequestId: clearanceId,
+    type: 'CLEARANCE_COMPLETED',
+    message: `The clearance for ${employee.full_name} has been fully completed.`,
+  })
+
+  // Email to HRBP (primary — "Dear HR")
+  const hrbpHtml = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear HR,</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      The clearance process for <strong>${employee.full_name}, ${employee.sf_employee_id}</strong>
+      has been completed.
+    </p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      You may log in to the clearance portal to review the final status.
+    </p>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      Please proceed with the full and final settlement.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Completed Clearance', '#16a34a')}
+  `)
+
+  await sendEmail({
+    to: hrbp.email,
+    subject: `Clearance Completed: ${employee.full_name} (${employee.sf_employee_id})`,
+    html: hrbpHtml,
+  })
+
+  // CC — separate email to employee
+  const employeeHtml = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${employee.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      Your clearance process has been fully completed.
+    </p>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      You may log in to the clearance portal to review the final status and download your clearance certificate.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Clearance Certificate', '#16a34a')}
+  `)
+
+  await sendEmail({
+    to: employee.email,
+    subject: `Your Clearance is Complete`,
+    html: employeeHtml,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Approver: Section re-routed by HRBP
+// Uses live ApproverAssignment rows — never the stale section.approver_id column.
+// DEPT_HEAD is resolved via the employee's line_manager_id.
+// ---------------------------------------------------------------------------
+
 export async function notifyApproverRerouted(
   clearanceId: string,
   sectionKey: string,
@@ -438,17 +487,14 @@ export async function notifyApproverRerouted(
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: {
-      employee: { select: { full_name: true, company_code: true, line_manager_id: true } },
+      employee: { select: { full_name: true, sf_employee_id: true, company_code: true, line_manager_id: true } },
       initiated_by_hrbp: { select: { full_name: true } },
     },
   })
-
   if (!clearance) return
 
   const companyCode = clearance.employee.company_code
   const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
-
-  // Resolve approver IDs for this section
   const approverIds: string[] = []
 
   if (sectionKey === 'DEPT_HEAD') {
@@ -466,7 +512,10 @@ export async function notifyApproverRerouted(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   for (const approverId of approverIds) {
-    const approver = await prisma.user.findUnique({ where: { id: approverId }, select: { id: true, email: true, full_name: true } })
+    const approver = await prisma.user.findUnique({
+      where: { id: approverId },
+      select: { id: true, email: true, full_name: true },
+    })
     if (!approver) continue
 
     const message = `Your section (${sectionLabel}) for ${clearance.employee.full_name}'s clearance has been re-routed by HRBP ${clearance.initiated_by_hrbp.full_name}. Note: ${hrbpNote}`
@@ -478,31 +527,80 @@ export async function notifyApproverRerouted(
       message,
     })
 
-    const html = emailWrapper(
-      'Clearance Section Re-routed — Action Required',
-      `<p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
-        Your previously denied section has been re-routed by the HRBP for reconsideration.
+    const html = emailWrapper(`
+      <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${approver.full_name},</p>
+      <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+        The <strong>${sectionLabel}</strong> section for
+        <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>'s
+        clearance has been re-routed by HRBP ${clearance.initiated_by_hrbp.full_name} for reconsideration.
       </p>
-      <table style="border-collapse: collapse; width: 100%;">
-        ${detailRow('Employee', clearance.employee.full_name)}
-        ${detailRow('Section', sectionLabel)}
-        ${detailRow('Re-routed by', clearance.initiated_by_hrbp.full_name)}
-      </table>
       <div style="margin: 16px 0; padding: 12px 16px; background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 4px;">
         <p style="margin: 0; color: #1e40af; font-size: 14px;"><strong>HRBP Note:</strong> ${hrbpNote}</p>
       </div>
-      <p style="margin: 20px 0 0 0;">
-        <a href="${appUrl}/clearance/${clearanceId}?view=approvals"
-           style="background: #2563eb; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px; display: inline-block;">
-          Review Clearance
-        </a>
-      </p>`
-    )
+      <p style="color: #374151; font-size: 14px; margin: 0;">
+        Please log in to the clearance portal and complete your assigned step.
+      </p>
+      ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Complete Your Action')}
+    `)
 
     await sendEmail({
       to: approver.email,
-      subject: `Re-routed: ${sectionLabel} — ${clearance.employee.full_name}`,
+      subject: `Action Required: ${sectionLabel} Re-routed — ${clearance.employee.full_name}`,
       html,
     })
   }
+}
+
+// ---------------------------------------------------------------------------
+// Template 3 — Reminder: Clearing agent has a pending action
+// NOT ACTIVE — function is defined but not called anywhere yet.
+// Wire up to a scheduled job or manual trigger when reminders go live.
+// ---------------------------------------------------------------------------
+
+export async function notifyApproverReminder(
+  clearanceId: string,
+  approverId: string
+): Promise<void> {
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: {
+      employee: { select: { full_name: true, sf_employee_id: true } },
+    },
+  })
+  if (!clearance) return
+
+  const approver = await prisma.user.findUnique({
+    where: { id: approverId },
+    select: { id: true, email: true, full_name: true },
+  })
+  if (!approver) return
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const message = `Reminder: Your clearance action for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) is still pending.`
+
+  await createNotification({
+    recipientId: approver.id,
+    clearanceRequestId: clearanceId,
+    type: 'APPROVER_REMINDER',
+    message,
+  })
+
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear,</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      Your clearance action for
+      <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>
+      is still pending.
+    </p>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      Kindly complete the required step in the clearance portal at the earliest.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Complete Your Action', '#d97706')}
+  `)
+
+  await sendEmail({
+    to: approver.email,
+    subject: `Reminder: Pending Clearance Action for ${clearance.employee.full_name}`,
+    html,
+  })
 }
