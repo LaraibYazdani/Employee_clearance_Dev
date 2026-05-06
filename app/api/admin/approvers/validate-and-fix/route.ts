@@ -84,7 +84,9 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
           })
           if (user) {
             const currentRoles = Array.isArray(user.roles) ? user.roles : []
-            const newRoles = [...new Set([...currentRoles, ...missingRoles])]
+            // Merge and deduplicate roles
+            const allRoles = currentRoles.concat(missingRoles)
+            const newRoles = allRoles.filter((role, index, self) => self.indexOf(role) === index)
             await prisma.user.update({
               where: { id: userId },
               data: { roles: newRoles },
@@ -199,7 +201,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
       if (clearanceId && searchParams.get('autoApprovePending') === 'true') {
         await prisma.clearanceItem.updateMany({
           where: {
-            clearance_request_id: clearanceId,
+            clearance_section: { clearance_request_id: clearanceId },
             status: 'PENDING',
           },
           data: {
