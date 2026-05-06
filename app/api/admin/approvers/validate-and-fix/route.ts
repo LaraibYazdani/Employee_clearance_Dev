@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { SECTION_ROLE_MAP } from '@/lib/clearance-config'
-import { grantApproverRole } from '@/lib/approver-resolver'
 
 /**
  * POST /api/admin/approvers/validate-and-fix
@@ -84,7 +83,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
             select: { full_name: true, roles: true },
           })
           if (user) {
-            const currentRoles = Array.isArray(user.roles) || [...user.roles]
+            const currentRoles = Array.isArray(user.roles) ? user.roles : []
             const newRoles = [...new Set([...currentRoles, ...missingRoles])]
             await prisma.user.update({
               where: { id: userId },
