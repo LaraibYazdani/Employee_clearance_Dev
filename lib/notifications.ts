@@ -44,15 +44,53 @@ export async function sendEmail(params: {
   html: string
 }): Promise<void> {
   try {
+    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.error(
+        '[notifications] sendEmail error: Missing SMTP configuration',
+        {
+          hasHost: !!process.env.SMTP_HOST,
+          hasUser: !!process.env.SMTP_USER,
+          hasPass: !!process.env.SMTP_PASS,
+          hasPort: !!process.env.SMTP_PORT,
+          hasFrom: !!process.env.SMTP_FROM,
+        }
+      )
+      return
+    }
+
     const transport = createTransport()
-    await transport.sendMail({
+    
+    // Test connection before sending
+    try {
+      await transport.verify()
+    } catch (verifyError) {
+      console.error('[notifications] SMTP verification failed:', {
+        host: process.env.SMTP_HOST,
+        port: process.env.SMTP_PORT,
+        error: verifyError instanceof Error ? verifyError.message : String(verifyError),
+      })
+      throw verifyError
+    }
+
+    const mailResult = await transport.sendMail({
       from: process.env.SMTP_FROM || 'clearance-portal@company.com',
       to: params.to,
       subject: params.subject,
       html: params.html,
     })
+
+    console.log('[notifications] sendEmail success:', {
+      to: params.to,
+      subject: params.subject,
+      messageId: mailResult.messageId,
+    })
   } catch (error) {
-    console.error('[notifications] sendEmail error:', error)
+    console.error('[notifications] sendEmail failed:', {
+      to: params.to,
+      subject: params.subject,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
   }
 }
 
