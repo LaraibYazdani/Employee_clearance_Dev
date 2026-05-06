@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { SECTION_ROLE_MAP } from '@/lib/clearance-config'
+import { sectionRole } from '@/lib/approver-resolver'
 import {
   checkAndUnlockSection3,
   checkAndCompleteClearance,
@@ -100,11 +101,8 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       return NextResponse.json({ error: 'Section is not in a PENDING state' }, { status: 409 })
     }
 
-    const requiredRole = SECTION_ROLE_MAP[section.section_key]
-    if (!requiredRole) {
-      return NextResponse.json({ error: 'Unknown section key' }, { status: 400 })
-    }
-
+    // sectionRole() generates DEPT_APPROVER_<key> for custom/unknown section keys
+    const requiredRole = sectionRole(section.section_key)
     const hasRole = user.roles.includes(requiredRole)
 
     // Live assignment check — never trust the stale section.approver_id column

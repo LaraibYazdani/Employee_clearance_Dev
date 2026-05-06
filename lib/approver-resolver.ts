@@ -1,6 +1,7 @@
 import { prisma } from './prisma'
 
-// Maps section_key → the portal role that grants approver access to that section
+// Maps well-known section_key → short role name. Custom section keys fall back
+// to a dynamically generated DEPT_APPROVER_<section_key> role at runtime.
 const SECTION_TO_ROLE: Record<string, string> = {
   IR_DEPT:          'DEPT_APPROVER_IR',
   IT_DEPT:          'DEPT_APPROVER_IT',
@@ -14,13 +15,17 @@ const SECTION_TO_ROLE: Record<string, string> = {
   FINANCE:          'DEPT_APPROVER_FINANCE',
 }
 
+/** Returns the role for a section, generating one dynamically for custom keys. */
+export function sectionRole(sectionKey: string): string {
+  return SECTION_TO_ROLE[sectionKey] ?? `DEPT_APPROVER_${sectionKey}`
+}
+
 /**
  * Grants the corresponding DEPT_APPROVER_* role to the user if they don't already have it.
  * Preserves all existing roles.
  */
 async function grantApproverRole(approverId: string, sectionKey: string): Promise<void> {
-  const role = SECTION_TO_ROLE[sectionKey]
-  if (!role) return
+  const role = sectionRole(sectionKey)
 
   const user = await prisma.user.findUnique({
     where: { id: approverId },
@@ -46,8 +51,7 @@ async function revokeApproverRoleIfNotAssigned(
   companyCode: string,
   sectionKey: string
 ): Promise<void> {
-  const role = SECTION_TO_ROLE[sectionKey]
-  if (!role) return
+  const role = sectionRole(sectionKey)
 
   // Check if user is still assigned to ANY item in this section for this company
   const stillAssigned = await prisma.approverAssignment.findFirst({
