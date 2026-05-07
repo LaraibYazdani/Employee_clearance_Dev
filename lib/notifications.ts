@@ -28,14 +28,28 @@ export async function createNotification(params: {
   type: string
   message: string
 }): Promise<void> {
-  await prisma.notification.create({
-    data: {
-      recipient_id: params.recipientId,
-      clearance_request_id: params.clearanceRequestId,
-      type: params.type,
-      message: params.message,
-    },
+  console.log('[notifications] createNotification:', {
+    recipientId: params.recipientId,
+    clearanceRequestId: params.clearanceRequestId,
+    type: params.type,
   })
+  try {
+    await prisma.notification.create({
+      data: {
+        recipient_id: params.recipientId,
+        clearance_request_id: params.clearanceRequestId,
+        type: params.type,
+        message: params.message,
+      },
+    })
+    console.log('[notifications] createNotification success:', { type: params.type, recipientId: params.recipientId })
+  } catch (error) {
+    console.error('[notifications] createNotification failed:', {
+      recipientId: params.recipientId,
+      type: params.type,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 export async function sendEmail(params: {
@@ -43,16 +57,17 @@ export async function sendEmail(params: {
   subject: string
   html: string
 }): Promise<void> {
+  console.log('[notifications] sendEmail called:', { to: params.to, subject: params.subject })
   try {
     if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
       console.error(
         '[notifications] sendEmail error: Missing SMTP configuration',
         {
-          hasHost: !!process.env.SMTP_HOST,
-          hasUser: !!process.env.SMTP_USER,
-          hasPass: !!process.env.SMTP_PASS,
-          hasPort: !!process.env.SMTP_PORT,
-          hasFrom: !!process.env.SMTP_FROM,
+          SMTP_HOST: process.env.SMTP_HOST ?? '(missing)',
+          SMTP_PORT: process.env.SMTP_PORT ?? '(missing)',
+          SMTP_USER: process.env.SMTP_USER ?? '(missing)',
+          SMTP_PASS: process.env.SMTP_PASS ? '(set)' : '(missing)',
+          SMTP_FROM: process.env.SMTP_FROM ?? '(missing)',
         }
       )
       return
@@ -129,6 +144,8 @@ function ctaButton(href: string, label: string, color = '#2563eb'): string {
 // ---------------------------------------------------------------------------
 
 export async function notifyEmployeeClearanceInitiated(clearanceId: string): Promise<void> {
+  console.log('[notifications] notifyEmployeeClearanceInitiated START:', { clearanceId })
+  
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: {
@@ -136,10 +153,20 @@ export async function notifyEmployeeClearanceInitiated(clearanceId: string): Pro
       initiated_by_hrbp: { select: { id: true, full_name: true, email: true } },
     },
   })
-  if (!clearance) return
+  if (!clearance) {
+    console.warn('[notifications] notifyEmployeeClearanceInitiated SKIP: clearance not found', { clearanceId })
+    return
+  }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   const { employee, initiated_by_hrbp: hrbp } = clearance
+  console.log('[notifications] notifyEmployeeClearanceInitiated found clearance:', {
+    clearanceId,
+    employeeId: employee.id,
+    employeeEmail: employee.email,
+    hrbpId: hrbp.id,
+    hrbpEmail: hrbp.email,
+  })
 
   // Notify employee
   const message = `Your clearance process has been initiated by HRBP ${hrbp.full_name}.`
@@ -149,6 +176,7 @@ export async function notifyEmployeeClearanceInitiated(clearanceId: string): Pro
     type: 'CLEARANCE_INITIATED_EMPLOYEE',
     message,
   })
+  console.log('[notifications] notifyEmployeeClearanceInitiated: employee notification created')
 
   const employeeHtml = emailWrapper(`
     <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${employee.full_name},</p>
@@ -166,6 +194,7 @@ export async function notifyEmployeeClearanceInitiated(clearanceId: string): Pro
     subject: `Your Clearance Has Been Initiated`,
     html: employeeHtml,
   })
+  console.log('[notifications] notifyEmployeeClearanceInitiated: employee email sent')
 
   // CC the HRBP
   const hrbpHtml = emailWrapper(`
@@ -185,6 +214,8 @@ export async function notifyEmployeeClearanceInitiated(clearanceId: string): Pro
     subject: `Clearance Initiated for ${employee.full_name}`,
     html: hrbpHtml,
   })
+  console.log('[notifications] notifyEmployeeClearanceInitiated: HRBP email sent')
+  console.log('[notifications] notifyEmployeeClearanceInitiated END: all emails sent', { clearanceId })
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +225,8 @@ export async function notifyEmployeeClearanceInitiated(clearanceId: string): Pro
 // ---------------------------------------------------------------------------
 
 export async function notifySection2Approvers(clearanceId: string): Promise<void> {
+  console.log('[notifications] notifySection2Approvers START:', { clearanceId })
+  
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: {
@@ -201,10 +234,25 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
       initiated_by_hrbp: { select: { full_name: true } },
     },
   })
-  if (!clearance) return
+  if (!clearance) {
+    console.warn('[notifications] notifySection2Approvers SKIP: clearance not found', { clearanceId })
+    return
+  }
 
   const companyCode = clearance.employee.company_code
-  if (!companyCode) return
+  console.log('[notifications] notifySection2Approvers found clearance:', {
+    clearanceId,
+    employeeName: clearance.employee.full_name,
+    companyCode,
+  })
+  
+  if (!companyCode) {
+    console.warn('[notifications] notifySection2Approvers SKIP: companyCode is null or undefined', {
+      clearanceId,
+      employeeId: clearance.employee,
+    })
+    return
+  }
 
   // Dynamically fetch phase-2 section keys from the template table — works for any company/custom sections
   const phaseTemplates = await prisma.clearanceSectionTemplate.findMany({
@@ -212,7 +260,16 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
     select: { section_key: true },
   })
   const section2Keys = phaseTemplates.map((t) => t.section_key)
-  if (section2Keys.length === 0) return
+  console.log('[notifications] notifySection2Approvers: phase 2 templates:', {
+    companyCode,
+    section2KeysCount: section2Keys.length,
+    section2Keys,
+  })
+  
+  if (section2Keys.length === 0) {
+    console.warn('[notifications] notifySection2Approvers SKIP: no phase 2 sections found', { companyCode })
+    return
+  }
 
   const sectionApproverMap = new Map<string, Set<string>>()
 
@@ -224,6 +281,8 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
     },
     select: { section_key: true, approver_id: true },
   })
+  console.log('[notifications] notifySection2Approvers: approver assignments found:', { assignmentCount: assignments.length })
+  
   for (const a of assignments) {
     if (!sectionApproverMap.has(a.section_key)) sectionApproverMap.set(a.section_key, new Set())
     sectionApproverMap.get(a.section_key)!.add(a.approver_id)
@@ -231,21 +290,38 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
 
   if (clearance.employee.line_manager_id && section2Keys.includes('DEPT_HEAD')) {
     sectionApproverMap.set('DEPT_HEAD', new Set([clearance.employee.line_manager_id]))
+    console.log('[notifications] notifySection2Approvers: added DEPT_HEAD approver via line_manager', {
+      lineManagerId: clearance.employee.line_manager_id,
+    })
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  let totalEmailsSent = 0
+  let totalApproversProcessed = 0
 
   for (const sectionKey of section2Keys) {
     const approverIds = sectionApproverMap.get(sectionKey)
-    if (!approverIds || approverIds.size === 0) continue
+    console.log('[notifications] notifySection2Approvers: processing section:', {
+      sectionKey,
+      approverCount: approverIds?.size ?? 0,
+    })
+    
+    if (!approverIds || approverIds.size === 0) {
+      console.warn('[notifications] notifySection2Approvers: no approvers for section', { sectionKey })
+      continue
+    }
 
     for (const approverId of Array.from(approverIds)) {
       const approver = await prisma.user.findUnique({
         where: { id: approverId },
         select: { id: true, email: true, full_name: true },
       })
-      if (!approver) continue
+      if (!approver) {
+        console.warn('[notifications] notifySection2Approvers: approver not found', { approverId })
+        continue
+      }
 
+      totalApproversProcessed++
       const message = `A clearance request for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) requires your action.`
 
       await createNotification({
@@ -272,9 +348,15 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
         subject: `Action Required: Clearance for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id})`,
         html,
       })
+      totalEmailsSent++
     }
   }
-}
+  
+  console.log('[notifications] notifySection2Approvers END:', {
+    clearanceId,
+    totalApproversProcessed,
+    totalEmailsSent,
+  })
 
 // ---------------------------------------------------------------------------
 // Template 2 — Clearing Agent: Section 3 approvers notified when phase 2 is done
@@ -282,6 +364,8 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
 // ---------------------------------------------------------------------------
 
 export async function notifySection3Approvers(clearanceId: string): Promise<void> {
+  console.log('[notifications] notifySection3Approvers START:', { clearanceId })
+  
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: {
@@ -289,17 +373,37 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
       initiated_by_hrbp: { select: { full_name: true } },
     },
   })
-  if (!clearance) return
+  if (!clearance) {
+    console.warn('[notifications] notifySection3Approvers SKIP: clearance not found', { clearanceId })
+    return
+  }
 
   const companyCode = clearance.employee.company_code
-  if (!companyCode) return
+  console.log('[notifications] notifySection3Approvers found clearance:', {
+    clearanceId,
+    employeeName: clearance.employee.full_name,
+    companyCode,
+  })
+  
+  if (!companyCode) {
+    console.warn('[notifications] notifySection3Approvers SKIP: companyCode is null', { clearanceId })
+    return
+  }
 
   // Dynamically fetch phase-3 section keys from the template table — works for any company/custom sections
   const phaseTemplates = await prisma.clearanceSectionTemplate.findMany({
     where: { company_code: companyCode, phase: 3 },
     select: { section_key: true, label: true },
   })
-  if (phaseTemplates.length === 0) return
+  console.log('[notifications] notifySection3Approvers: phase 3 templates found:', {
+    companyCode,
+    templateCount: phaseTemplates.length,
+  })
+  
+  if (phaseTemplates.length === 0) {
+    console.warn('[notifications] notifySection3Approvers SKIP: no phase 3 sections in templates', { companyCode })
+    return
+  }
 
   const section3Keys = phaseTemplates.map((t) => t.section_key)
   const labelFromDB = new Map(phaseTemplates.map((t) => [t.section_key, t.label]))
@@ -312,6 +416,7 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
     },
     select: { section_key: true, approver_id: true },
   })
+  console.log('[notifications] notifySection3Approvers: assignments found:', { assignmentCount: assignments.length })
 
   const sectionApproverMap = new Map<string, Set<string>>()
   for (const a of assignments) {
@@ -320,18 +425,32 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  let totalEmailsSent = 0
+  let totalApproversProcessed = 0
 
   for (const sectionKey of section3Keys) {
     const approverIds = sectionApproverMap.get(sectionKey)
-    if (!approverIds || approverIds.size === 0) continue
+    console.log('[notifications] notifySection3Approvers: processing section:', {
+      sectionKey,
+      approverCount: approverIds?.size ?? 0,
+    })
+    
+    if (!approverIds || approverIds.size === 0) {
+      console.warn('[notifications] notifySection3Approvers: no approvers for section', { sectionKey })
+      continue
+    }
 
     for (const approverId of Array.from(approverIds)) {
       const approver = await prisma.user.findUnique({
         where: { id: approverId },
         select: { id: true, email: true, full_name: true },
       })
-      if (!approver) continue
+      if (!approver) {
+        console.warn('[notifications] notifySection3Approvers: approver not found', { approverId })
+        continue
+      }
 
+      totalApproversProcessed++
       const sectionLabel = labelFromDB.get(sectionKey) ?? SECTION_LABELS[sectionKey] ?? sectionKey
       const message = `A clearance request for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) requires your action for: ${sectionLabel}.`
 
@@ -359,9 +478,15 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
         subject: `Action Required: Clearance for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id})`,
         html,
       })
+      totalEmailsSent++
     }
   }
-}
+  
+  console.log('[notifications] notifySection3Approvers END:', {
+    clearanceId,
+    totalApproversProcessed,
+    totalEmailsSent,
+  })
 
 // ---------------------------------------------------------------------------
 // HRBP: Section approved update
@@ -372,15 +497,25 @@ export async function notifyHRBPSectionApproved(
   sectionKey: string,
   approverName: string
 ): Promise<void> {
+  console.log('[notifications] notifyHRBPSectionApproved START:', { clearanceId, sectionKey, approverName })
+  
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: { employee: true, initiated_by_hrbp: true },
   })
-  if (!clearance) return
+  if (!clearance) {
+    console.warn('[notifications] notifyHRBPSectionApproved SKIP: clearance not found', { clearanceId })
+    return
+  }
 
   const hrbp = clearance.initiated_by_hrbp
   const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
   const message = `${sectionLabel} has been approved by ${approverName} for ${clearance.employee.full_name}'s clearance.`
+  console.log('[notifications] notifyHRBPSectionApproved: sending notification to HRBP:', {
+    hrbpId: hrbp.id,
+    hrbpEmail: hrbp.email,
+    sectionLabel,
+  })
 
   await createNotification({
     recipientId: hrbp.id,
@@ -407,6 +542,7 @@ export async function notifyHRBPSectionApproved(
     subject: `Clearance Update: ${sectionLabel} Approved — ${clearance.employee.full_name}`,
     html,
   })
+  console.log('[notifications] notifyHRBPSectionApproved END: email sent', { clearanceId, sectionKey })
 }
 
 // ---------------------------------------------------------------------------
@@ -419,15 +555,26 @@ export async function notifyHRBPSectionDenied(
   approverName: string,
   comment: string
 ): Promise<void> {
+  console.log('[notifications] notifyHRBPSectionDenied START:', { clearanceId, sectionKey, approverName })
+  
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: { employee: true, initiated_by_hrbp: true },
   })
-  if (!clearance) return
+  if (!clearance) {
+    console.warn('[notifications] notifyHRBPSectionDenied SKIP: clearance not found', { clearanceId })
+    return
+  }
 
   const hrbp = clearance.initiated_by_hrbp
   const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
   const message = `${sectionLabel} has been denied by ${approverName} for ${clearance.employee.full_name}'s clearance. Reason: ${comment}`
+  console.log('[notifications] notifyHRBPSectionDenied: sending notification to HRBP:', {
+    hrbpId: hrbp.id,
+    hrbpEmail: hrbp.email,
+    sectionLabel,
+    commentLength: comment.length,
+  })
 
   await createNotification({
     recipientId: hrbp.id,
@@ -457,6 +604,7 @@ export async function notifyHRBPSectionDenied(
     subject: `Action Required: ${sectionLabel} Denied — ${clearance.employee.full_name}`,
     html,
   })
+  console.log('[notifications] notifyHRBPSectionDenied END: email sent', { clearanceId, sectionKey })
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +613,8 @@ export async function notifyHRBPSectionDenied(
 // ---------------------------------------------------------------------------
 
 export async function notifyHRBPCompletion(clearanceId: string): Promise<void> {
+  console.log('[notifications] notifyHRBPCompletion START:', { clearanceId })
+  
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: {
@@ -472,10 +622,20 @@ export async function notifyHRBPCompletion(clearanceId: string): Promise<void> {
       initiated_by_hrbp: { select: { id: true, full_name: true, email: true } },
     },
   })
-  if (!clearance) return
+  if (!clearance) {
+    console.warn('[notifications] notifyHRBPCompletion SKIP: clearance not found', { clearanceId })
+    return
+  }
 
   const { employee, initiated_by_hrbp: hrbp } = clearance
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  console.log('[notifications] notifyHRBPCompletion: found clearance:', {
+    clearanceId,
+    employeeId: employee.id,
+    employeeEmail: employee.email,
+    hrbpId: hrbp.id,
+    hrbpEmail: hrbp.email,
+  })
 
   // In-app notification for HRBP
   await createNotification({
@@ -484,6 +644,7 @@ export async function notifyHRBPCompletion(clearanceId: string): Promise<void> {
     type: 'CLEARANCE_COMPLETED',
     message: `The clearance for ${employee.full_name} has been fully completed.`,
   })
+  console.log('[notifications] notifyHRBPCompletion: HRBP notification created')
 
   // Email to HRBP (primary — "Dear HR")
   const hrbpHtml = emailWrapper(`
@@ -506,6 +667,7 @@ export async function notifyHRBPCompletion(clearanceId: string): Promise<void> {
     subject: `Clearance Completed: ${employee.full_name} (${employee.sf_employee_id})`,
     html: hrbpHtml,
   })
+  console.log('[notifications] notifyHRBPCompletion: HRBP email sent')
 
   // CC — separate email to employee
   const employeeHtml = emailWrapper(`
@@ -524,6 +686,8 @@ export async function notifyHRBPCompletion(clearanceId: string): Promise<void> {
     subject: `Your Clearance is Complete`,
     html: employeeHtml,
   })
+  console.log('[notifications] notifyHRBPCompletion: employee email sent')
+  console.log('[notifications] notifyHRBPCompletion END: all emails sent', { clearanceId })
 }
 
 // ---------------------------------------------------------------------------
@@ -537,6 +701,8 @@ export async function notifyApproverRerouted(
   sectionKey: string,
   hrbpNote: string
 ): Promise<void> {
+  console.log('[notifications] notifyApproverRerouted START:', { clearanceId, sectionKey })
+  
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: {
@@ -544,34 +710,70 @@ export async function notifyApproverRerouted(
       initiated_by_hrbp: { select: { full_name: true } },
     },
   })
-  if (!clearance) return
+  if (!clearance) {
+    console.warn('[notifications] notifyApproverRerouted SKIP: clearance not found', { clearanceId })
+    return
+  }
 
   const companyCode = clearance.employee.company_code
   const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
   const approverIds: string[] = []
+  console.log('[notifications] notifyApproverRerouted: found clearance:', {
+    clearanceId,
+    sectionKey,
+    sectionLabel,
+    companyCode,
+  })
 
   if (sectionKey === 'DEPT_HEAD') {
-    if (clearance.employee.line_manager_id) approverIds.push(clearance.employee.line_manager_id)
+    if (clearance.employee.line_manager_id) {
+      approverIds.push(clearance.employee.line_manager_id)
+      console.log('[notifications] notifyApproverRerouted: using line_manager as DEPT_HEAD', {
+        lineManagerId: clearance.employee.line_manager_id,
+      })
+    } else {
+      console.warn('[notifications] notifyApproverRerouted: DEPT_HEAD section but no line_manager_id', { clearanceId })
+    }
   } else if (companyCode) {
     const assignments = await prisma.approverAssignment.findMany({
       where: { company_code: companyCode, section_key: sectionKey, item_key: 'section' },
       select: { approver_id: true },
     })
     approverIds.push(...assignments.map((a) => a.approver_id))
+    console.log('[notifications] notifyApproverRerouted: found assignmentCount:', {
+      sectionKey,
+      assignmentCount: assignments.length,
+    })
   }
 
-  if (approverIds.length === 0) return
+  if (approverIds.length === 0) {
+    console.warn('[notifications] notifyApproverRerouted SKIP: no approverIds found', {
+      clearanceId,
+      sectionKey,
+      isDepthHead: sectionKey === 'DEPT_HEAD',
+    })
+    return
+  }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  let emailsSent = 0
 
   for (const approverId of approverIds) {
     const approver = await prisma.user.findUnique({
       where: { id: approverId },
       select: { id: true, email: true, full_name: true },
     })
-    if (!approver) continue
+    if (!approver) {
+      console.warn('[notifications] notifyApproverRerouted: approver not found', { approverId })
+      continue
+    }
 
     const message = `Your section (${sectionLabel}) for ${clearance.employee.full_name}'s clearance has been re-routed by HRBP ${clearance.initiated_by_hrbp.full_name}. Note: ${hrbpNote}`
+    console.log('[notifications] notifyApproverRerouted: processing approver:', {
+      approverId,
+      approverEmail: approver.email,
+      sectionKey,
+    })
 
     await createNotification({
       recipientId: approver.id,
@@ -601,8 +803,14 @@ export async function notifyApproverRerouted(
       subject: `Action Required: ${sectionLabel} Re-routed — ${clearance.employee.full_name}`,
       html,
     })
+    emailsSent++
   }
-}
+  
+  console.log('[notifications] notifyApproverRerouted END:', {
+    clearanceId,
+    sectionKey,
+    emailsSent,
+  })
 
 // ---------------------------------------------------------------------------
 // Template 3 — Reminder: Clearing agent has a pending action
@@ -614,19 +822,33 @@ export async function notifyApproverReminder(
   clearanceId: string,
   approverId: string
 ): Promise<void> {
+  console.log('[notifications] notifyApproverReminder START:', { clearanceId, approverId })
+  
   const clearance = await prisma.clearanceRequest.findUnique({
     where: { id: clearanceId },
     include: {
       employee: { select: { full_name: true, sf_employee_id: true } },
     },
   })
-  if (!clearance) return
+  if (!clearance) {
+    console.warn('[notifications] notifyApproverReminder SKIP: clearance not found', { clearanceId })
+    return
+  }
 
   const approver = await prisma.user.findUnique({
     where: { id: approverId },
     select: { id: true, email: true, full_name: true },
   })
-  if (!approver) return
+  if (!approver) {
+    console.warn('[notifications] notifyApproverReminder SKIP: approver not found', { approverId })
+    return
+  }
+
+  console.log('[notifications] notifyApproverReminder: found clearance and approver:', {
+    clearanceId,
+    approverId,
+    approverEmail: approver.email,
+  })
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   const message = `Reminder: Your clearance action for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) is still pending.`
@@ -637,6 +859,7 @@ export async function notifyApproverReminder(
     type: 'APPROVER_REMINDER',
     message,
   })
+  console.log('[notifications] notifyApproverReminder: notification created')
 
   const html = emailWrapper(`
     <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear,</p>
@@ -656,4 +879,5 @@ export async function notifyApproverReminder(
     subject: `Reminder: Pending Clearance Action for ${clearance.employee.full_name}`,
     html,
   })
+  console.log('[notifications] notifyApproverReminder END: email sent', { clearanceId, approverId })
 }
