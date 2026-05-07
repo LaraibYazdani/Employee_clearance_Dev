@@ -615,7 +615,7 @@ export default function ApproverManagementPage() {
                                 )}
                                 {item.assignment && !isEditing && (
                                   <button
-                                    onClick={() => removeApprover(section.section_key, item.item_key)}
+                                    onClick={() => removeApprover(section.section_key, item.assignment!.item_key)}
                                     className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors"
                                   >
                                     Remove
