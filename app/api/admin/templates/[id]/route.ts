@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { sectionRole } from '@/lib/approver-resolver'
 
 // ---------------------------------------------------------------------------
 // PATCH /api/admin/templates/[id]  — update a section template
@@ -78,32 +79,28 @@ export const DELETE = withAuth(async (req: AuthenticatedRequest, context: any) =
       select: { approver_id: true },
     })
 
-    // Revoke roles from all approvers assigned to this section
-    const SECTION_TO_ROLE: Record<string, string> = {
-      'IR_DEPT': 'DEPT_APPROVER_IR',
-      'IT_DEPT': 'DEPT_APPROVER_IT',
-      'SUPPLY_MGMT': 'DEPT_APPROVER_SUPPLY',
-      'ICS_DEPT': 'DEPT_APPROVER_ICS',
-      'SECURITY': 'DEPT_APPROVER_SECURITY',
-      'OTHER_FACILITIES': 'DEPT_APPROVER_OTHER',
-      'DEPT_HEAD': 'DEPT_APPROVER_HEAD',
-      'OD_DEPT': 'DEPT_APPROVER_OD',
-      'HR_DEPT': 'DEPT_APPROVER_HR',
-      'FINANCE': 'DEPT_APPROVER_FINANCE',
-    }
+    // Revoke roles — works for both known and custom section keys
+    const roleToRevoke = sectionRole(section_key)
 
-    const roleToRevoke = SECTION_TO_ROLE[section_key]
+    for (const assignment of assignments) {
+      const approver = await prisma.user.findUnique({
+        where: { id: assignment.approver_id },
+        select: { roles: true },
+      })
 
-    if (roleToRevoke) {
-      for (const assignment of assignments) {
-        const approver = await prisma.user.findUnique({
-          where: { id: assignment.approver_id },
-          select: { roles: true },
-        })
-
-        if (approver) {
-          const currentRoles = Array.isArray(approver.roles) ? (approver.roles as string[]) : []
-          if (currentRoles.includes(roleToRevoke)) {
+      if (approver) {
+        const currentRoles = Array.isArray(approver.roles) ? (approver.roles as string[]) : []
+        if (currentRoles.includes(roleToRevoke)) {
+          // Only revoke if not still assigned to this section in another company
+          const stillElsewhere = await prisma.approverAssignment.findFirst({
+            where: {
+              section_key,
+              approver_id: assignment.approver_id,
+              company_code: { not: company_code },
+            },
+            select: { id: true },
+          })
+          if (!stillElsewhere) {
             await prisma.user.update({
               where: { id: assignment.approver_id },
               data: { roles: currentRoles.filter((r) => r !== roleToRevoke) },

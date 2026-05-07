@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { SECTION_ROLE_MAP } from '@/lib/clearance-config'
+import { sectionRole } from '@/lib/approver-resolver'
 
 /**
  * POST /api/admin/approvers/validate-and-fix
@@ -57,9 +57,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
       if (!user) continue
 
       const currentRoles = Array.isArray(user.roles) ? (user.roles as string[]) : []
-      const requiredRole = SECTION_ROLE_MAP[assignment.section_key]
-
-      if (!requiredRole) continue
+      const requiredRole = sectionRole(assignment.section_key)
 
       if (!currentRoles.includes(requiredRole)) {
         if (!usersNeedingRoles[user.id]) {

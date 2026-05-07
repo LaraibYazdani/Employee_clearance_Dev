@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { removeApproverForItem } from '@/lib/approver-resolver'
 
 // ---------------------------------------------------------------------------
 // PATCH /api/admin/templates/items/[itemId]  — update an item
@@ -50,6 +51,18 @@ export const DELETE = withAuth(async (req: AuthenticatedRequest, context: any) =
   const { itemId } = context.params as { itemId: string }
 
   try {
+    // Fetch the item first so we can clean up its approver assignment
+    const item = await prisma.clearanceItemTemplate.findUnique({
+      where: { id: itemId },
+      select: { company_code: true, section_key: true, item_key: true },
+    })
+    if (!item) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+    }
+
+    // Remove any per-item approver assignment and revoke role if no longer needed
+    await removeApproverForItem(item.company_code, item.section_key, item.item_key)
+
     await prisma.clearanceItemTemplate.delete({ where: { id: itemId } })
     return NextResponse.json({ success: true })
   } catch (error: any) {

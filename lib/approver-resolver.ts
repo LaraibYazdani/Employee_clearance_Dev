@@ -44,26 +44,26 @@ async function grantApproverRole(approverId: string, sectionKey: string): Promis
 
 /**
  * Revokes the corresponding DEPT_APPROVER_* role if the user is not assigned
- * to any other items in that section for that company.
+ * to any item in that section across ANY company.
+ * Roles are global on the user, so we must check all companies before revoking.
  */
 async function revokeApproverRoleIfNotAssigned(
   approverId: string,
-  companyCode: string,
+  _companyCode: string,
   sectionKey: string
 ): Promise<void> {
   const role = sectionRole(sectionKey)
 
-  // Check if user is still assigned to ANY item in this section for this company
+  // Check across all companies — role is global, not per-company
   const stillAssigned = await prisma.approverAssignment.findFirst({
     where: {
-      company_code: companyCode,
       section_key: sectionKey,
       approver_id: approverId,
     },
     select: { id: true },
   })
 
-  // If still assigned to at least one item, don't revoke the role
+  // Still assigned in at least one company — keep the role
   if (stillAssigned) return
 
   // User is no longer assigned to this section — revoke the role
