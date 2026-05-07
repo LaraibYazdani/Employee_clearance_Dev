@@ -357,6 +357,7 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
     totalApproversProcessed,
     totalEmailsSent,
   })
+}
 
 // ---------------------------------------------------------------------------
 // Template 2 — Clearing Agent: Section 3 approvers notified when phase 2 is done
@@ -487,6 +488,7 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
     totalApproversProcessed,
     totalEmailsSent,
   })
+}
 
 // ---------------------------------------------------------------------------
 // HRBP: Section approved update
@@ -811,6 +813,7 @@ export async function notifyApproverRerouted(
     sectionKey,
     emailsSent,
   })
+}
 
 // ---------------------------------------------------------------------------
 // Template 3 — Reminder: Clearing agent has a pending action
