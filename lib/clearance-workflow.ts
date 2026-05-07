@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { SECTION_ROLE_MAP } from '@/lib/clearance-config'
+import { sectionRole } from '@/lib/approver-resolver'
 import {
   notifySection3Approvers,
   notifyHRBPCompletion,
@@ -136,9 +136,8 @@ export async function findApproverForSection(
     if (assignment) return assignment.approver_id
   }
 
-  // Fall back to role-based lookup
-  const requiredRole = SECTION_ROLE_MAP[sectionKey]
-  if (!requiredRole) return null
+  // Fall back to role-based lookup — works for both known and custom section keys
+  const requiredRole = sectionRole(sectionKey)
 
   const users = await prisma.user.findMany({
     select: { id: true, roles: true },

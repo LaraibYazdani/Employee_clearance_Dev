@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/prisma'
-import { SECTION_LABELS, SECTION_2_KEYS, SECTION_3_KEYS } from '@/lib/clearance-config'
+import { SECTION_LABELS } from '@/lib/clearance-config'
 
 // ---------------------------------------------------------------------------
 // Nodemailer transport
@@ -204,25 +204,32 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
   if (!clearance) return
 
   const companyCode = clearance.employee.company_code
-  const section2Keys = SECTION_2_KEYS as readonly string[]
+  if (!companyCode) return
+
+  // Dynamically fetch phase-2 section keys from the template table — works for any company/custom sections
+  const phaseTemplates = await prisma.clearanceSectionTemplate.findMany({
+    where: { company_code: companyCode, phase: 2 },
+    select: { section_key: true },
+  })
+  const section2Keys = phaseTemplates.map((t) => t.section_key)
+  if (section2Keys.length === 0) return
+
   const sectionApproverMap = new Map<string, Set<string>>()
 
-  if (companyCode) {
-    const assignments = await prisma.approverAssignment.findMany({
-      where: {
-        company_code: companyCode,
-        section_key: { in: [...section2Keys.filter((k) => k !== 'DEPT_HEAD')] },
-        item_key: 'section',
-      },
-      select: { section_key: true, approver_id: true },
-    })
-    for (const a of assignments) {
-      if (!sectionApproverMap.has(a.section_key)) sectionApproverMap.set(a.section_key, new Set())
-      sectionApproverMap.get(a.section_key)!.add(a.approver_id)
-    }
+  const assignments = await prisma.approverAssignment.findMany({
+    where: {
+      company_code: companyCode,
+      section_key: { in: section2Keys.filter((k) => k !== 'DEPT_HEAD') },
+      item_key: 'section',
+    },
+    select: { section_key: true, approver_id: true },
+  })
+  for (const a of assignments) {
+    if (!sectionApproverMap.has(a.section_key)) sectionApproverMap.set(a.section_key, new Set())
+    sectionApproverMap.get(a.section_key)!.add(a.approver_id)
   }
 
-  if (clearance.employee.line_manager_id) {
+  if (clearance.employee.line_manager_id && section2Keys.includes('DEPT_HEAD')) {
     sectionApproverMap.set('DEPT_HEAD', new Set([clearance.employee.line_manager_id]))
   }
 
@@ -285,14 +292,22 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
   if (!clearance) return
 
   const companyCode = clearance.employee.company_code
-  const section3Keys = SECTION_3_KEYS as readonly string[]
-
   if (!companyCode) return
+
+  // Dynamically fetch phase-3 section keys from the template table — works for any company/custom sections
+  const phaseTemplates = await prisma.clearanceSectionTemplate.findMany({
+    where: { company_code: companyCode, phase: 3 },
+    select: { section_key: true, label: true },
+  })
+  if (phaseTemplates.length === 0) return
+
+  const section3Keys = phaseTemplates.map((t) => t.section_key)
+  const labelFromDB = new Map(phaseTemplates.map((t) => [t.section_key, t.label]))
 
   const assignments = await prisma.approverAssignment.findMany({
     where: {
       company_code: companyCode,
-      section_key: { in: [...section3Keys] },
+      section_key: { in: section3Keys },
       item_key: 'section',
     },
     select: { section_key: true, approver_id: true },
@@ -317,7 +332,7 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
       })
       if (!approver) continue
 
-      const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
+      const sectionLabel = labelFromDB.get(sectionKey) ?? SECTION_LABELS[sectionKey] ?? sectionKey
       const message = `A clearance request for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) requires your action for: ${sectionLabel}.`
 
       await createNotification({
