@@ -219,6 +219,101 @@ export async function notifyEmployeeClearanceInitiated(clearanceId: string): Pro
 }
 
 // ---------------------------------------------------------------------------
+// Template 1.5 — Line Manager: Notified of clearance requiring their approval
+// Resolves line manager from employee's line_manager_id
+// Skips with note if no line manager found in system
+// ---------------------------------------------------------------------------
+
+export async function notifyLineManager(clearanceId: string): Promise<void> {
+  console.log('[notifications] notifyLineManager START:', { clearanceId })
+  
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: {
+      employee: { select: { id: true, full_name: true, sf_employee_id: true, line_manager_id: true } },
+      initiated_by_hrbp: { select: { full_name: true } },
+    },
+  })
+  if (!clearance) {
+    console.warn('[notifications] notifyLineManager SKIP: clearance not found', { clearanceId })
+    return
+  }
+
+  console.log('[notifications] notifyLineManager found clearance:', {
+    clearanceId,
+    employeeId: clearance.employee.id,
+    employeeName: clearance.employee.full_name,
+    lineManagerId: clearance.employee.line_manager_id,
+  })
+
+  // Check if line manager exists
+  if (!clearance.employee.line_manager_id) {
+    console.warn('[notifications] notifyLineManager SKIP: no line manager found for employee', {
+      clearanceId,
+      employeeId: clearance.employee.id,
+      employeeName: clearance.employee.full_name,
+    })
+    return
+  }
+
+  // Fetch line manager details
+  const lineManager = await prisma.user.findUnique({
+    where: { id: clearance.employee.line_manager_id },
+    select: { id: true, email: true, full_name: true },
+  })
+
+  if (!lineManager) {
+    console.warn('[notifications] notifyLineManager SKIP: line manager ID exists but user record not found', {
+      clearanceId,
+      lineManagerId: clearance.employee.line_manager_id,
+    })
+    return
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  console.log('[notifications] notifyLineManager: line manager found', {
+    clearanceId,
+    lineManagerId: lineManager.id,
+    lineManagerEmail: lineManager.email,
+    lineManagerName: lineManager.full_name,
+  })
+
+  // Create in-app notification for line manager
+  const message = `A clearance request for ${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}, who reports to you, requires your approval.`
+  await createNotification({
+    recipientId: lineManager.id,
+    clearanceRequestId: clearanceId,
+    type: 'CLEARANCE_INITIATED',
+    message,
+  })
+  console.log('[notifications] notifyLineManager: notification created for', { lineManagerId: lineManager.id })
+
+  // Send email to line manager
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${lineManager.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      A clearance request for <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>,
+      who reports to you, requires your approval.
+    </p>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      Please log in to the clearance portal and provide your approval.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Open for Approval')}
+  `)
+
+  await sendEmail({
+    to: lineManager.email,
+    subject: `Action Required: Clearance Approval for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id})`,
+    html,
+  })
+  console.log('[notifications] notifyLineManager: email sent successfully', {
+    clearanceId,
+    lineManagerEmail: lineManager.email,
+  })
+  console.log('[notifications] notifyLineManager END:', { clearanceId, lineManagerId: lineManager.id })
+}
+
+// ---------------------------------------------------------------------------
 // Template 2 — Clearing Agent: Section 2 approvers notified on initiation
 // Uses live ApproverAssignment rows — never the stale section.approver_id column.
 // DEPT_HEAD is resolved via the employee's line_manager_id.

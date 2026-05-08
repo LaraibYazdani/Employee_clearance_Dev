@@ -107,9 +107,10 @@ export async function triggerCompletion(clearanceId: string): Promise<void> {
  * Finds the appropriate approver user ID for a given section key.
  *
  * Priority order:
- * 1. DEPT_HEAD → employee's line_manager_id
- * 2. ApproverAssignment table (company_code + section_key)
- * 3. Role-based fallback (first user with the required role)
+ * 1. LINE_MANAGER → employee's line_manager_id
+ * 2. DEPT_HEAD → employee's line_manager_id
+ * 3. ApproverAssignment table (company_code + section_key)
+ * 4. Role-based fallback (first user with the required role)
  *
  * Returns null if no suitable approver is found.
  */
@@ -118,7 +119,7 @@ export async function findApproverForSection(
   employeeId: string,
   companyCode?: string | null
 ): Promise<string | null> {
-  if (sectionKey === 'DEPT_HEAD') {
+  if (sectionKey === 'LINE_MANAGER' || sectionKey === 'DEPT_HEAD') {
     const employee = await prisma.user.findUnique({
       where: { id: employeeId },
       select: { line_manager_id: true },

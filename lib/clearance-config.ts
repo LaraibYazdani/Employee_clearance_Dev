@@ -1,17 +1,18 @@
 export const SECTION_KEYS = [
-  'SECTION_1_HR_ISSUE', 'IR_DEPT', 'IT_DEPT', 'SUPPLY_MGMT',
+  'SECTION_1_HR_ISSUE', 'LINE_MANAGER', 'IR_DEPT', 'IT_DEPT', 'SUPPLY_MGMT',
   'ICS_DEPT', 'SECURITY', 'OTHER_FACILITIES', 'DEPT_HEAD',
   'OD_DEPT', 'HR_DEPT', 'FINANCE',
 ] as const
 
 export const SECTION_2_KEYS = [
-  'IR_DEPT', 'IT_DEPT', 'SUPPLY_MGMT', 'ICS_DEPT',
+  'LINE_MANAGER', 'IR_DEPT', 'IT_DEPT', 'SUPPLY_MGMT', 'ICS_DEPT',
   'SECURITY', 'OTHER_FACILITIES', 'DEPT_HEAD',
 ] as const
 
 export const SECTION_3_KEYS = ['OD_DEPT', 'HR_DEPT', 'FINANCE'] as const
 
 export const SECTION_ROLE_MAP: Record<string, string> = {
+  'LINE_MANAGER': 'LINE_MANAGER_APPROVER',
   'IR_DEPT': 'DEPT_APPROVER_IR',
   'IT_DEPT': 'DEPT_APPROVER_IT',
   'SUPPLY_MGMT': 'DEPT_APPROVER_SUPPLY',
@@ -25,6 +26,7 @@ export const SECTION_ROLE_MAP: Record<string, string> = {
 }
 
 export const SECTION_LABELS: Record<string, string> = {
+  'LINE_MANAGER': 'Manager Clearance',
   'SECTION_1_HR_ISSUE': 'Section 1 - HR Issue',
   'IR_DEPT': 'Industrial Relations Department',
   'IT_DEPT': 'IT Department',
@@ -39,6 +41,9 @@ export const SECTION_LABELS: Record<string, string> = {
 }
 
 export const DEFAULT_SECTION_ITEMS: Record<string, Array<{ item_key: string; description: string }>> = {
+  'LINE_MANAGER': [
+    { item_key: 'manager_clearance_approval', description: 'Manager Clearance Approval' },
+  ],
   'IR_DEPT': [
     { item_key: 'social_security_card', description: 'Social Security Card' },
     { item_key: 'fair_price_shop', description: 'Fair Price Shop' },

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { DEFAULT_SECTION_ITEMS, SECTION_LABELS, SECTION_2_KEYS } from '@/lib/clearance-config'
 
 export type SectionTemplate = {
   id: string
@@ -35,6 +36,7 @@ async function attachItems(
 /**
  * Fetches clearance section templates for a given company.
  * Falls back to PL (1000) if no templates exist for the requested company.
+ * Always includes the LINE_MANAGER section (programmatically injected).
  */
 export async function getTemplatesForCompany(
   companyCode: string | null
@@ -46,16 +48,41 @@ export async function getTemplatesForCompany(
     orderBy: { sort_order: 'asc' },
   })
 
-  if (sections.length > 0) return attachItems(sections, primaryCode)
+  let templatesWithItems: SectionTemplate[] = []
 
-  // Fallback to PL (1000)
-  if (primaryCode !== '1000') {
+  if (sections.length > 0) {
+    templatesWithItems = await attachItems(sections, primaryCode)
+  } else if (primaryCode !== '1000') {
+    // Fallback to PL (1000)
     const fallback = await prisma.clearanceSectionTemplate.findMany({
       where: { company_code: '1000' },
       orderBy: { sort_order: 'asc' },
     })
-    return attachItems(fallback, '1000')
+    templatesWithItems = await attachItems(fallback, '1000')
   }
 
-  return []
+  // Always inject LINE_MANAGER section if not already present
+  const lineManagerExists = templatesWithItems.some((s) => s.section_key === 'LINE_MANAGER')
+  if (!lineManagerExists) {
+    const lineManagerItems = DEFAULT_SECTION_ITEMS['LINE_MANAGER'] || []
+    const lineManagerTemplate: SectionTemplate = {
+      id: `synthetic-line-manager-${primaryCode}`,
+      company_code: primaryCode,
+      section_key: 'LINE_MANAGER',
+      label: SECTION_LABELS['LINE_MANAGER'] || 'Manager Clearance',
+      phase: 2,
+      sort_order: 0, // First in phase 2
+      items: lineManagerItems.map((item, idx) => ({
+        id: `synthetic-line-manager-item-${idx}`,
+        company_code: primaryCode,
+        section_key: 'LINE_MANAGER',
+        item_key: item.item_key,
+        description: item.description,
+        sort_order: idx,
+      })),
+    }
+    templatesWithItems.unshift(lineManagerTemplate)
+  }
+
+  return templatesWithItems
 }
