@@ -167,9 +167,15 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
         return false
       }
 
+      // DEPT_HEAD label is always 'Departmental Head' regardless of what the template says
+      const resolvedLabel =
+        s.section_key === 'DEPT_HEAD'
+          ? 'Departmental Head'
+          : (sectionLabelMap.get(s.section_key) ?? undefined)
+
       return {
         ...s,
-        label: sectionLabelMap.get(s.section_key),
+        label: resolvedLabel,
         approver_id: displayApproverId ?? s.approver_id,
         approver_name: displayApproverName ?? s.approver_name,
         items,
