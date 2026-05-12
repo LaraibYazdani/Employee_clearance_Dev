@@ -1,16 +1,89 @@
 import { NextResponse } from 'next/server'
-import { withAuth, AuthenticatedRequest } from '@/lib/auth'
+import { withAuth, AuthenticatedRequest, hashPassword } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { DEFAULT_FINANCE_ENTRIES } from '@/lib/clearance-config'
 import { findApproverForSection } from '@/lib/clearance-workflow'
 import { getTemplatesForCompany } from '@/lib/clearance-templates'
 import { notifySection2Approvers, notifyEmployeeClearanceInitiated, notifyLineManager } from '@/lib/notifications'
-import { getHRBP } from '@/lib/successfactors'
+import { getHRBP, getEmpJob, getUserProfile, COMPANY_CODE_MAP } from '@/lib/successfactors'
 
 // PKT = UTC+5
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000
 function nowPKT(): Date {
   return new Date(Date.now() + PKT_OFFSET_MS)
+}
+
+/**
+ * Fetches the employee's line manager from SF and ensures they exist in the local DB.
+ * Updates the employee's line_manager_id if it is missing or stale.
+ * Runs fire-and-forget — caller must .catch() any rejections.
+ */
+async function syncLineManagerToDb(employeeSfId: string, employeeDbId: string): Promise<void> {
+  const job = await getEmpJob(employeeSfId)
+  if (!job?.managerId) return
+
+  const managerId = job.managerId
+
+  // Find or create manager record
+  let managerDbId: string | null = null
+
+  const existingManager = await prisma.user.findUnique({
+    where: { sf_employee_id: managerId },
+    select: { id: true },
+  })
+
+  if (existingManager) {
+    managerDbId = existingManager.id
+  } else {
+    // Import manager profile from SF
+    const [profile, managerJob] = await Promise.all([
+      getUserProfile(managerId),
+      getEmpJob(managerId),
+    ])
+
+    if (!profile) return
+
+    const companyCode = managerJob?.company ?? ''
+    const companyName = COMPANY_CODE_MAP[companyCode] ?? companyCode
+    const designation = managerJob?.jobTitle || managerJob?.localJobTitle || profile.title || ''
+    const payGrade = managerJob?.payGrade ?? profile.payGrade ?? ''
+    const placeholderHash = await hashPassword(`SF_PLACEHOLDER_${managerId}_${Date.now()}`)
+
+    const created = await prisma.user.create({
+      data: {
+        sf_employee_id: managerId,
+        full_name: profile.displayName,
+        email: profile.email || `${managerId}@packagesli.com`,
+        password_hash: placeholderHash,
+        grade: payGrade,
+        designation,
+        department: profile.department ?? '',
+        division: profile.division ?? '',
+        company: companyName,
+        company_code: companyCode,
+        roles: ['EMPLOYEE'],
+        sf_synced_at: new Date(),
+      },
+      select: { id: true },
+    })
+
+    managerDbId = created.id
+    console.log(`[syncLineManagerToDb] Imported manager SF:${managerId} as DB:${managerDbId}`)
+  }
+
+  // Update employee's line_manager_id if not already set correctly
+  const emp = await prisma.user.findUnique({
+    where: { id: employeeDbId },
+    select: { line_manager_id: true },
+  })
+
+  if (emp && emp.line_manager_id !== managerDbId) {
+    await prisma.user.update({
+      where: { id: employeeDbId },
+      data: { line_manager_id: managerDbId },
+    })
+    console.log(`[syncLineManagerToDb] Updated employee ${employeeDbId} line_manager_id → ${managerDbId}`)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +397,12 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
     } catch (notifyErr) {
       console.error('[POST /api/clearance] notification error:', notifyErr)
     }
+
+    // Sync line manager profile to DB in the background (non-critical)
+    // Ensures manager name shows in the DEPT_HEAD approver section even if they've never logged in
+    syncLineManagerToDb(employee.sf_employee_id, body.employeeId!).catch((err) => {
+      console.error('[POST /api/clearance] line manager sync error:', err)
+    })
 
     return NextResponse.json(clearance, { status: 201 })
   } catch (error) {
