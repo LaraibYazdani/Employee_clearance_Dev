@@ -80,7 +80,11 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
     }
   })
 
-  return NextResponse.json({ company_code: companyCode, sections })
+  const payrollManager = assignments.find(
+    (a) => a.section_key === 'PAYROLL_MANAGER'
+  ) ?? null
+
+  return NextResponse.json({ company_code: companyCode, sections, payrollManager })
 })
 
 // POST /api/admin/approvers — upsert one assignment
@@ -102,16 +106,18 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
     return NextResponse.json({ error: 'Approver not found' }, { status: 404 })
   }
 
-  // Enforce: one user can only be assigned to one department
-  const conflictingSection = await checkApproverDepartmentConflict(company_code, section_key, approver_id)
-  if (conflictingSection) {
-    return NextResponse.json(
-      {
-        error: 'Department conflict',
-        message: `${approver.full_name} is already assigned to the ${conflictingSection} department. A user can only be an approver for one department.`,
-      },
-      { status: 409 }
-    )
+  // PAYROLL_MANAGER is a special global role — skip the department conflict check
+  if (section_key !== 'PAYROLL_MANAGER') {
+    const conflictingSection = await checkApproverDepartmentConflict(company_code, section_key, approver_id)
+    if (conflictingSection) {
+      return NextResponse.json(
+        {
+          error: 'Department conflict',
+          message: `${approver.full_name} is already assigned to the ${conflictingSection} department. A user can only be an approver for one department.`,
+        },
+        { status: 409 }
+      )
+    }
   }
 
   // If assigning at section level (item_key = 'section'), clear all individual item assignments for this section

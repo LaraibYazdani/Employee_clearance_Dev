@@ -68,6 +68,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest, context: any) => 
           clearance_request: {
             select: {
               id: true,
+              status: true,
               employee_id: true,
               initiated_by_hrbp_id: true,
               employee: { select: { full_name: true } },
@@ -92,20 +93,15 @@ export const POST = withAuth(async (req: AuthenticatedRequest, context: any) => 
   const isOwnerHRBP = user.roles.includes('HRBP') && clearance.initiated_by_hrbp_id === user.id
   const isSubjectEmployee = clearance.employee_id === user.id
   const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
-  if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isDeptApprover) {
+  const isPayrollManager = user.roles.includes('PAYROLL_MANAGER')
+  if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isDeptApprover && !isPayrollManager) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Section must be PENDING; item must not be APPROVED
-  if (section.status !== 'PENDING') {
+  // Block uploads once the clearance is fully completed
+  if (clearance.status === 'COMPLETED') {
     return NextResponse.json(
-      { error: 'Cannot add attachments — section is not pending' },
-      { status: 409 }
-    )
-  }
-  if (item.status === 'APPROVED') {
-    return NextResponse.json(
-      { error: 'Cannot add attachments to an already-approved item' },
+      { error: 'Cannot add attachments — clearance is completed' },
       { status: 409 }
     )
   }

@@ -383,11 +383,19 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
     sectionApproverMap.get(a.section_key)!.add(a.approver_id)
   }
 
-  if (clearance.employee.line_manager_id && section2Keys.includes('DEPT_HEAD')) {
-    sectionApproverMap.set('DEPT_HEAD', new Set([clearance.employee.line_manager_id]))
-    console.log('[notifications] notifySection2Approvers: added DEPT_HEAD approver via line_manager', {
-      lineManagerId: clearance.employee.line_manager_id,
-    })
+  if (clearance.employee.line_manager_id) {
+    if (section2Keys.includes('DEPT_HEAD')) {
+      sectionApproverMap.set('DEPT_HEAD', new Set([clearance.employee.line_manager_id]))
+      console.log('[notifications] notifySection2Approvers: added DEPT_HEAD approver via line_manager', {
+        lineManagerId: clearance.employee.line_manager_id,
+      })
+    }
+    if (section2Keys.includes('LINE_MANAGER')) {
+      sectionApproverMap.set('LINE_MANAGER', new Set([clearance.employee.line_manager_id]))
+      console.log('[notifications] notifySection2Approvers: added LINE_MANAGER approver via line_manager', {
+        lineManagerId: clearance.employee.line_manager_id,
+      })
+    }
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -822,14 +830,14 @@ export async function notifyApproverRerouted(
     companyCode,
   })
 
-  if (sectionKey === 'DEPT_HEAD') {
+  if (sectionKey === 'DEPT_HEAD' || sectionKey === 'LINE_MANAGER') {
     if (clearance.employee.line_manager_id) {
       approverIds.push(clearance.employee.line_manager_id)
-      console.log('[notifications] notifyApproverRerouted: using line_manager as DEPT_HEAD', {
+      console.log('[notifications] notifyApproverRerouted: using line_manager as DEPT_HEAD/LINE_MANAGER', {
         lineManagerId: clearance.employee.line_manager_id,
       })
     } else {
-      console.warn('[notifications] notifyApproverRerouted: DEPT_HEAD section but no line_manager_id', { clearanceId })
+      console.warn('[notifications] notifyApproverRerouted: DEPT_HEAD/LINE_MANAGER section but no line_manager_id', { clearanceId })
     }
   } else if (companyCode) {
     const assignments = await prisma.approverAssignment.findMany({
@@ -978,4 +986,77 @@ export async function notifyApproverReminder(
     html,
   })
   console.log('[notifications] notifyApproverReminder END: email sent', { clearanceId, approverId })
+}
+
+// ---------------------------------------------------------------------------
+// Payroll Manager: All sections approved — ready for final sign-off
+// ---------------------------------------------------------------------------
+
+export async function notifyPayrollManager(clearanceId: string): Promise<void> {
+  console.log('[notifications] notifyPayrollManager START:', { clearanceId })
+
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: {
+      employee: { select: { id: true, full_name: true, sf_employee_id: true, company_code: true } },
+      initiated_by_hrbp: { select: { full_name: true } },
+    },
+  })
+  if (!clearance) {
+    console.warn('[notifications] notifyPayrollManager SKIP: clearance not found', { clearanceId })
+    return
+  }
+
+  const companyCode = clearance.employee.company_code
+  if (!companyCode) {
+    console.warn('[notifications] notifyPayrollManager SKIP: no company_code', { clearanceId })
+    return
+  }
+
+  const assignment = await prisma.approverAssignment.findFirst({
+    where: { company_code: companyCode, section_key: 'PAYROLL_MANAGER' },
+    select: { approver_id: true },
+  })
+  if (!assignment) {
+    console.warn('[notifications] notifyPayrollManager SKIP: no payroll manager assigned', { companyCode })
+    return
+  }
+
+  const payrollManager = await prisma.user.findUnique({
+    where: { id: assignment.approver_id },
+    select: { id: true, email: true, full_name: true },
+  })
+  if (!payrollManager) {
+    console.warn('[notifications] notifyPayrollManager SKIP: payroll manager user not found', { approverId: assignment.approver_id })
+    return
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const message = `All sections for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) have been approved. Please complete the clearance.`
+
+  await createNotification({
+    recipientId: payrollManager.id,
+    clearanceRequestId: clearanceId,
+    type: 'READY_FOR_PAYROLL',
+    message,
+  })
+
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${payrollManager.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      All department sections for <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>
+      have been approved.
+    </p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      Please log in to the clearance portal to review the deductible entries and complete the clearance.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'Complete Clearance', '#7c3aed')}
+  `)
+
+  await sendEmail({
+    to: payrollManager.email,
+    subject: `Action Required: Complete Clearance for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id})`,
+    html,
+  })
+  console.log('[notifications] notifyPayrollManager END: email sent', { clearanceId, payrollManagerId: payrollManager.id })
 }

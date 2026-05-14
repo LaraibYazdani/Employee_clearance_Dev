@@ -65,6 +65,17 @@ export default function ApproverManagementPage() {
   const [sections, setSections] = useState<Section[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
+  const [payrollManager, setPayrollManager] = useState<Assignment | null>(null)
+
+  // Payroll manager assignment state
+  const [pmEditing, setPmEditing] = useState(false)
+  const [pmQuery, setPmQuery] = useState('')
+  const [pmDbResults, setPmDbResults] = useState<UserSearchResult[]>([])
+  const [pmSfResults, setPmSfResults] = useState<SFImportResult[]>([])
+  const [pmSfLoading, setPmSfLoading] = useState(false)
+  const [pmImporting, setPmImporting] = useState(false)
+  const [pmSaving, setPmSaving] = useState(false)
+  const [pmError, setPmError] = useState<string | null>(null)
 
   // User search state per cell
   const [searchQuery, setSearchQuery] = useState<Record<string, string>>({})
@@ -102,6 +113,7 @@ export default function ApproverManagementPage() {
       if (res.ok) {
         const data = await res.json()
         setSections(data.sections ?? [])
+        setPayrollManager(data.payrollManager ?? null)
       }
     } finally {
       setLoading(false)
@@ -315,6 +327,97 @@ export default function ApproverManagementPage() {
     await bulkAssignWithUser(sectionKey, bulkUser)
   }
 
+  const searchPmUsers = async (query: string) => {
+    setPmQuery(query)
+    if (!query.trim() || query.length < 2) { setPmDbResults([]); setPmSfResults([]); return }
+    try {
+      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) setPmDbResults((await res.json()).slice(0, 8))
+    } catch { /* ignore */ }
+  }
+
+  const searchPmSF = async () => {
+    if (!pmQuery.trim() || pmQuery.length < 2) return
+    setPmSfLoading(true)
+    try {
+      const res = await fetch(`/api/admin/sf-import?q=${encodeURIComponent(pmQuery)}`, {
+        headers: authHeaders(),
+      })
+      if (res.ok) setPmSfResults((await res.json()).slice(0, 8))
+    } catch { /* ignore */ }
+    finally { setPmSfLoading(false) }
+  }
+
+  const assignPayrollManager = async (approver: UserSearchResult) => {
+    setPmSaving(true)
+    setPmError(null)
+    try {
+      const res = await fetch('/api/admin/approvers', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          company_code: selectedCompany,
+          section_key: 'PAYROLL_MANAGER',
+          item_key: 'section',
+          approver_id: approver.id,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setPmError(data.message ?? 'Assignment failed')
+        return
+      }
+      setPmEditing(false)
+      setPmQuery('')
+      setPmDbResults([])
+      setPmSfResults([])
+      await fetchMatrix()
+    } finally {
+      setPmSaving(false)
+    }
+  }
+
+  const importAndAssignPm = async (sfUser: SFImportResult) => {
+    setPmImporting(true)
+    setPmError(null)
+    try {
+      let dbId = sfUser.dbId
+      if (!sfUser.inDb) {
+        const res = await fetch('/api/admin/sf-import', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ sf_user_id: sfUser.sf_employee_id }),
+        })
+        if (!res.ok) {
+          const data = await res.json()
+          setPmError(data.error ?? 'Import failed')
+          return
+        }
+        dbId = (await res.json()).user.id
+      }
+      await assignPayrollManager({ id: dbId!, full_name: sfUser.full_name, email: sfUser.email, designation: sfUser.designation })
+    } finally {
+      setPmImporting(false)
+    }
+  }
+
+  const removePayrollManager = async () => {
+    try {
+      await fetch('/api/admin/approvers', {
+        method: 'DELETE',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          company_code: selectedCompany,
+          section_key: 'PAYROLL_MANAGER',
+          item_key: 'section',
+        }),
+      })
+      await fetchMatrix()
+    } catch { /* ignore */ }
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -368,6 +471,125 @@ export default function ApproverManagementPage() {
           </div>
         </div>
 
+        {/* Payroll Manager card */}
+        <div className="bg-white rounded-xl border border-purple-200 shadow-sm">
+          <div className="flex items-center justify-between px-5 py-3 bg-purple-50 border-b border-purple-100">
+            <div>
+              <h3 className="text-sm font-semibold text-purple-900">Payroll Manager</h3>
+              <p className="text-xs text-purple-600 mt-0.5">Final sign-off approver for all clearances in this company</p>
+            </div>
+            {!pmEditing && (
+              <button
+                onClick={() => { setPmEditing(true); setPmQuery(''); setPmDbResults([]); setPmSfResults([]); setPmError(null) }}
+                className="text-xs text-purple-600 hover:text-purple-800 font-medium px-3 py-1 rounded-lg border border-purple-200 hover:bg-purple-100 transition-colors"
+              >
+                {payrollManager ? 'Change' : 'Assign'}
+              </button>
+            )}
+          </div>
+
+          <div className="px-5 py-4">
+            {pmError && (
+              <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <svg className="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {pmError}
+              </div>
+            )}
+
+            {pmEditing ? (
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="relative flex-1 min-w-64">
+                  <div className="flex gap-2">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={pmQuery}
+                      onChange={(e) => searchPmUsers(e.target.value)}
+                      placeholder="Search by name or ID..."
+                      className="flex-1 rounded-lg border border-purple-300 px-3 py-1.5 text-sm focus:ring-2 focus:ring-purple-200 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={searchPmSF}
+                      disabled={pmSfLoading || pmQuery.length < 2}
+                      className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1.5 rounded border border-purple-200 hover:bg-purple-50 transition-colors disabled:opacity-40 whitespace-nowrap"
+                    >
+                      {pmSfLoading ? 'Searching…' : 'Search SF'}
+                    </button>
+                    <button
+                      onClick={() => { setPmEditing(false); setPmError(null) }}
+                      className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5 rounded border border-gray-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+
+                  {(pmDbResults.length > 0 || pmSfResults.length > 0) && (
+                    <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+                      {pmDbResults.map((u) => (
+                        <button
+                          key={u.id}
+                          onClick={() => assignPayrollManager(u)}
+                          disabled={pmSaving}
+                          className="w-full text-left px-3 py-2 hover:bg-purple-50 text-sm"
+                        >
+                          <span className="font-medium text-gray-800">{u.full_name}</span>
+                          <span className="text-gray-400 ml-2 text-xs">{u.designation}</span>
+                        </button>
+                      ))}
+                      {pmSfResults.length > 0 && (
+                        <>
+                          <div className="px-3 py-1.5 text-xs font-semibold text-purple-600 bg-purple-50 border-t border-purple-100">
+                            SuccessFactors Results
+                          </div>
+                          {pmSfResults.map((u) => (
+                            <button
+                              key={u.sf_employee_id}
+                              onClick={() => importAndAssignPm(u)}
+                              disabled={pmSaving || pmImporting}
+                              className="w-full text-left px-3 py-2 hover:bg-purple-50 text-sm flex items-center justify-between"
+                            >
+                              <span>
+                                <span className="font-medium text-gray-800">{u.full_name}</span>
+                                <span className="text-gray-400 ml-2 text-xs">{u.designation}</span>
+                              </span>
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${u.inDb ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {u.inDb ? 'Assign' : 'Import & Assign'}
+                              </span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : payrollManager ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-bold shrink-0">
+                    {payrollManager.approver.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{payrollManager.approver.full_name}</p>
+                    <p className="text-xs text-gray-400">{payrollManager.approver.designation} &bull; {payrollManager.approver.email}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={removePayrollManager}
+                  className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">No payroll manager assigned for this company.</p>
+            )}
+          </div>
+        </div>
+
         {/* Sections */}
         {loading ? (
           <div className="space-y-4">
@@ -386,7 +608,7 @@ export default function ApproverManagementPage() {
               const isBulkOpen = bulkSection === section.section_key
 
               return (
-                <div key={section.section_key} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div key={section.section_key} className="bg-white rounded-xl border border-gray-200 shadow-sm">
                   {/* Section header */}
                   <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
                     <h3 className="text-sm font-semibold text-gray-800">{section.section_label}</h3>
@@ -420,7 +642,7 @@ export default function ApproverManagementPage() {
                             className="w-full rounded-lg border border-indigo-300 px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-300 outline-none"
                           />
                           {(bulkResults.length > 0 || bulkSfResults.length > 0) && (
-                            <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+                            <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
                               {bulkResults.map((u) => (
                                 <button
                                   key={u.id}
@@ -539,7 +761,7 @@ export default function ApproverManagementPage() {
                                     </button>
                                   </div>
                                   {(cellDbResults.length > 0 || cellSfResults.length > 0) && (
-                                    <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+                                    <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
                                       {cellDbResults.map((u) => (
                                         <button
                                           key={u.id}

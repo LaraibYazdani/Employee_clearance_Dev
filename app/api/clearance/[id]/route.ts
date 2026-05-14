@@ -81,15 +81,33 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       assignmentMap.get(a.section_key)!.set(a.item_key, a.approver_id)
     }
 
+    // Payroll manager check
+    const payrollAssignment = allAssignments.find(
+      (a) => a.section_key === 'PAYROLL_MANAGER' && a.approver_id === user.id
+    )
+    const isPayrollManager = user.roles.includes('PAYROLL_MANAGER') || !!payrollAssignment
+
     // Access control — any of: super admin, initiating HRBP, subject employee,
-    // assigned approver in ApproverAssignment, line manager, or has a DEPT_APPROVER role
+    // assigned approver in ApproverAssignment, line manager, DEPT_APPROVER role, or payroll manager
     const isAssignedApprover = allAssignments.some((a) => a.approver_id === user.id)
-    const isLineManager = lineManagerId === user.id
+    // Check both live line_manager_id and stored section.approver_id for DEPT_HEAD/LINE_MANAGER
+    // This handles: line manager changed after creation, employee re-imported with new DB id, etc.
+    const isLineManager =
+      lineManagerId === user.id ||
+      clearance.clearance_sections.some(
+        (s) =>
+          (s.section_key === 'LINE_MANAGER' || s.section_key === 'DEPT_HEAD') &&
+          s.approver_id === user.id
+      )
     const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
 
-    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedApprover && !isLineManager && !isDeptApprover) {
+    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedApprover && !isLineManager && !isDeptApprover && !isPayrollManager) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    const canComplete =
+      isPayrollManager &&
+      clearance.status === 'PENDING_PAYROLL'
 
     // Batch-fetch all approver names (single query)
     const approverIdSet = new Set(allAssignments.map((a) => a.approver_id))
@@ -119,7 +137,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       // Section-level display approver (shown in summary panel / section header)
       let displayApproverId: string | null = null
       let displayApproverName: string | null = null
-      if (s.section_key === 'DEPT_HEAD') {
+      if (s.section_key === 'DEPT_HEAD' || s.section_key === 'LINE_MANAGER') {
         displayApproverId = lineManagerId
         displayApproverName = lineManagerId ? (approverNameMap.get(lineManagerId) ?? null) : null
       } else if (sectionLevelApproverId) {
@@ -146,8 +164,11 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
         if (s.status === 'LOCKED' || s.status !== 'PENDING') return false
         if (isSuperAdmin) return true
 
-        // DEPT_HEAD section: only the employee's line manager can approve
-        if (s.section_key === 'DEPT_HEAD') return lineManagerId === user.id
+        // DEPT_HEAD and LINE_MANAGER: check both live line_manager_id and stored approver_id
+        // Covers cases where line manager changed after creation or employee was re-imported
+        if (s.section_key === 'DEPT_HEAD' || s.section_key === 'LINE_MANAGER') {
+          return lineManagerId === user.id || s.approver_id === user.id
+        }
 
         if (sectionItems.size === 0) {
           // No assignments configured → fall back to role-based check
@@ -167,10 +188,12 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
         return false
       }
 
-      // DEPT_HEAD label is always 'Departmental Head' regardless of what the template says
+      // LINE_MANAGER and DEPT_HEAD labels are always resolved regardless of template
       const resolvedLabel =
         s.section_key === 'DEPT_HEAD'
           ? 'Departmental Head'
+          : s.section_key === 'LINE_MANAGER'
+          ? 'Department Head'
           : (sectionLabelMap.get(s.section_key) ?? undefined)
 
       return {
@@ -183,7 +206,25 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       }
     })
 
-    return NextResponse.json({ ...clearance, sections })
+    // Determine which users can see deductible fields
+    const canSeeDeductibles = isSuperAdmin || isOwnerHRBP || isSubjectEmployee || isPayrollManager
+
+    // For each section's items, tag whether the current user can see/edit deductibles
+    const sectionsWithDeductibleFlags = sections.map((s) => ({
+      ...s,
+      items: s.items.map((item: any) => ({
+        ...item,
+        show_deductibles: canSeeDeductibles || item.assigned_approver_id === user.id,
+      })),
+    }))
+
+    return NextResponse.json({
+      ...clearance,
+      sections: sectionsWithDeductibleFlags,
+      can_complete: canComplete,
+      is_payroll_manager: isPayrollManager,
+      is_subject_employee: isSubjectEmployee,
+    })
   } catch (error) {
     console.error('[GET /api/clearance/[id]] error:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -212,7 +253,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
     return NextResponse.json({ error: 'status is required' }, { status: 400 })
   }
 
-  const allowedStatuses = ['IN_PROGRESS', 'PENDING_HRBP', 'COMPLETED', 'CANCELLED']
+  const allowedStatuses = ['IN_PROGRESS', 'PENDING_HRBP', 'PENDING_PAYROLL', 'COMPLETED', 'CANCELLED']
   if (!allowedStatuses.includes(body.status)) {
     return NextResponse.json(
       { error: `Invalid status. Must be one of: ${allowedStatuses.join(', ')}` },

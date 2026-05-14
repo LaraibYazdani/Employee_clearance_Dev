@@ -28,7 +28,14 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
   let body: {
     action?: string
     note?: string
-    items?: Array<{ id: string; item_key?: string; status?: string; comments?: string }>
+    items?: Array<{
+      id: string
+      item_key?: string
+      status?: string
+      comments?: string
+      deductible_description?: string | null
+      deductible_amount?: number | string | null
+    }>
   }
   try {
     body = await req.json()
@@ -81,10 +88,22 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       where: { company_code: companyCode, approver_id: user.id },
       select: { id: true },
     })
-    const isLineManagerForEmployee = employeeLineManagerId === user.id
+    const isLineManagerForEmployee =
+      employeeLineManagerId === user.id ||
+      ((section.section_key === 'LINE_MANAGER' || section.section_key === 'DEPT_HEAD') &&
+        section.approver_id === user.id)
 
     if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !hasAnyAssignment && !isLineManagerForEmployee) {
       return NextResponse.json({ error: 'Forbidden: You cannot access this clearance' }, { status: 403 })
+    }
+
+    // Block all actions on a completed clearance
+    const clearanceStatus = await prisma.clearanceRequest.findUnique({
+      where: { id: clearanceId },
+      select: { status: true },
+    })
+    if (clearanceStatus?.status === 'COMPLETED') {
+      return NextResponse.json({ error: 'Clearance is completed and can no longer be modified' }, { status: 409 })
     }
 
     // Validate section is in a state that allows action
@@ -105,12 +124,11 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
     const requiredRole = sectionRole(section.section_key)
     const hasRole = user.roles.includes(requiredRole)
 
-    // Live assignment check — never trust the stale section.approver_id column
-    // For DEPT_HEAD: approver is the employee's line manager
-    // For all others: check ApproverAssignment table directly
+    // Live assignment check — check both live line_manager_id and stored section.approver_id
+    // to handle cases where line manager changed after creation or employee was re-imported
     let isAssignedApprover = false
-    if (section.section_key === 'DEPT_HEAD') {
-      isAssignedApprover = employeeLineManagerId === user.id
+    if (section.section_key === 'DEPT_HEAD' || section.section_key === 'LINE_MANAGER') {
+      isAssignedApprover = employeeLineManagerId === user.id || section.approver_id === user.id
     } else {
       const liveAssignment = await prisma.approverAssignment.findFirst({
         where: {
@@ -173,6 +191,12 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
               data: {
                 ...(status ? { status } : {}),
                 ...(item.comments !== undefined ? { comments: item.comments } : {}),
+                ...(item.deductible_description !== undefined
+                  ? { deductible_description: item.deductible_description }
+                  : {}),
+                ...(item.deductible_amount !== undefined
+                  ? { deductible_amount: item.deductible_amount !== null ? String(item.deductible_amount) : null }
+                  : {}),
                 ...(status === 'APPROVED' || status === 'NA'
                   ? { approver_id: user.id, approver_name: user.full_name, decision_at: now }
                   : {}),

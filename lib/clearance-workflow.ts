@@ -3,6 +3,7 @@ import { sectionRole } from '@/lib/approver-resolver'
 import {
   notifySection3Approvers,
   notifyHRBPCompletion,
+  notifyPayrollManager,
 } from '@/lib/notifications'
 
 // PKT = UTC+5
@@ -51,17 +52,50 @@ export async function checkAndUnlockSection3(clearanceId: string): Promise<boole
 
 /**
  * Checks whether ALL sections are APPROVED.
- * Returns true if the clearance is fully approved.
+ * If a payroll manager is assigned for the company, sets status to PENDING_PAYROLL and notifies them.
+ * Otherwise auto-completes the clearance (backward compat for companies with no payroll manager).
  */
 export async function checkAndCompleteClearance(clearanceId: string): Promise<boolean> {
-  const sections = await prisma.clearanceSection.findMany({
-    where: { clearance_request_id: clearanceId },
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: {
+      clearance_sections: { select: { status: true } },
+      employee: { select: { company_code: true } },
+    },
   })
+  if (!clearance) return false
 
-  const allApproved = sections.every((s) => s.status === 'APPROVED')
+  const allApproved = clearance.clearance_sections.every((s) => s.status === 'APPROVED')
   if (!allApproved) return false
 
-  await triggerCompletion(clearanceId)
+  const companyCode = clearance.employee.company_code ?? '1000'
+  const payrollAssignment = await prisma.approverAssignment.findFirst({
+    where: { company_code: companyCode, section_key: 'PAYROLL_MANAGER' },
+    select: { approver_id: true },
+  })
+
+  if (payrollAssignment) {
+    const now = nowPKT()
+    await prisma.clearanceRequest.update({
+      where: { id: clearanceId },
+      data: { status: 'PENDING_PAYROLL' },
+    })
+    await prisma.activityLog.create({
+      data: {
+        clearance_request_id: clearanceId,
+        actor_id: payrollAssignment.approver_id,
+        action: 'READY_FOR_PAYROLL',
+        details: JSON.stringify({
+          message: 'All sections approved. Clearance pending payroll manager sign-off.',
+          timestamp: now.toISOString(),
+        }),
+      },
+    })
+    await notifyPayrollManager(clearanceId)
+  } else {
+    await triggerCompletion(clearanceId)
+  }
+
   return true
 }
 

@@ -113,24 +113,42 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
 
     // Role-based scoping
     const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
+    const isPayrollManager = user.roles.includes('PAYROLL_MANAGER')
+    let assignedSectionKeys = new Set<string>()
 
     if (user.roles.includes('SUPER_ADMIN')) {
       // No additional filter — see all
     } else if (user.roles.includes('HRBP')) {
       where.initiated_by_hrbp_id = user.id
-    } else if (isDeptApprover) {
-      // Find company codes where this user has live ApproverAssignment rows
-      const liveAssignments = await prisma.approverAssignment.findMany({
-        where: { approver_id: user.id },
+    } else if (isPayrollManager) {
+      // Payroll manager sees clearances pending their sign-off for companies they're assigned to
+      const pmAssignments = await prisma.approverAssignment.findMany({
+        where: { approver_id: user.id, section_key: 'PAYROLL_MANAGER' },
         select: { company_code: true },
         distinct: ['company_code'],
       })
-      const assignedCompanyCodes = liveAssignments.map((a) => a.company_code)
+      const pmCompanyCodes = pmAssignments.map((a) => a.company_code)
+      where.OR = [
+        ...(pmCompanyCodes.length > 0
+          ? [{ employee: { company_code: { in: pmCompanyCodes } } }]
+          : []),
+      ]
+      where.status = { in: ['PENDING_PAYROLL', 'COMPLETED'] }
+    } else if (isDeptApprover) {
+      // Find company codes + section keys where this user has live ApproverAssignment rows
+      const liveAssignments = await prisma.approverAssignment.findMany({
+        where: { approver_id: user.id },
+        select: { company_code: true, section_key: true },
+      })
+      const uniqueCompanies = Array.from(new Set(liveAssignments.map((a) => a.company_code)))
+      const assignedCompanyCodes = uniqueCompanies
+      assignedSectionKeys = new Set(liveAssignments.map((a) => a.section_key))
 
       // Show clearances for:
       // 1. Companies where user has item/section assignments (live)
-      // 2. Clearances where user is the employee's line manager (DEPT_HEAD)
-      // 3. Legacy: stale section.approver_id match (for pre-assignment-table clearances)
+      // 2. Clearances where user is the employee's line manager (DEPT_HEAD/LINE_MANAGER)
+      // 3. Clearances where user is stored as approver on any section (covers re-imports/changes)
+      // No status filter — approvers see all clearances they were/are involved in
       const orConditions: any[] = []
       if (assignedCompanyCodes.length > 0) {
         orConditions.push({ employee: { company_code: { in: assignedCompanyCodes } } })
@@ -138,12 +156,11 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       orConditions.push({ employee: { line_manager_id: user.id } })
       orConditions.push({
         clearance_sections: {
-          some: { approver_id: user.id, status: { in: ['PENDING', 'DENIED'] } },
+          some: { approver_id: user.id },
         },
       })
 
       where.OR = orConditions
-      where.status = { in: ['IN_PROGRESS', 'PENDING_HRBP'] }
     } else {
       // EMPLOYEE / unverified HRBP — default shows clearances they initiated;
       // ?view=mine shows clearances where they are the employee
@@ -185,6 +202,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       sections: c.clearance_sections.map((s) => ({
         ...s,
         items: s.clearance_items,
+        is_my_section: s.approver_id === user.id || assignedSectionKeys.has(s.section_key),
       })),
     }))
 

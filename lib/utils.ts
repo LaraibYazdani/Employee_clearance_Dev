@@ -123,6 +123,7 @@ export function getSectionLabel(sectionKey: string): string {
     SECURITY: 'Security',
     OTHER_FACILITIES: 'Other (Facilities)',
     DEPT_HEAD: 'Departmental Head',
+    LINE_MANAGER: 'Department Head',
     OD_DEPT: 'Organizational Development',
     HR_DEPT: 'HR Department',
     FINANCE: 'Finance',

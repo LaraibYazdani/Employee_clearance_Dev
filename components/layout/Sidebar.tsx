@@ -79,16 +79,6 @@ const allLinks: SidebarLink[] = [
     ),
   },
   {
-    href: '/admin/clearances',
-    label: 'All Clearances',
-    roles: ['SUPER_ADMIN'],
-    icon: (
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-      </svg>
-    ),
-  },
-  {
     href: '/admin/hrbp',
     label: 'HRBP Management',
     roles: ['SUPER_ADMIN'],

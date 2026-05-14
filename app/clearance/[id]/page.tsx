@@ -16,7 +16,6 @@ import {
   getUserSectionKey,
   getSectionLabel,
   hasRole,
-  hasAnyRole,
 } from '@/lib/utils'
 
 /* ─────────────────────────────────────────────
@@ -91,6 +90,7 @@ export default function ClearanceDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeSection, setActiveSection] = useState<string | null>(null)
+  const [pdfEnabled, setPdfEnabled] = useState(true)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const authHeaders = useCallback(
@@ -108,10 +108,12 @@ export default function ClearanceDetailPage() {
       const data: ClearanceRequest = await res.json()
       setClearance(data)
       if (!activeSection && data.sections && data.sections.length > 0) {
-        const visible = isApprovalsView
-          ? data.sections.filter((s) => s.can_act)
-          : data.sections
-        setActiveSection((visible[0] ?? data.sections[0]).section_key)
+        // In approvals view, prefer a pending (can_act) section; fall back to first assigned section
+        const pending = isApprovalsView ? data.sections.find((s: any) => s.can_act) : null
+        const first = isApprovalsView
+          ? (pending ?? data.sections.find((s: any) => s.can_act || s.approver_id === user?.id) ?? data.sections[0])
+          : data.sections[0]
+        setActiveSection(first.section_key)
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error loading clearance')
@@ -141,7 +143,15 @@ export default function ClearanceDetailPage() {
     refreshUser()
     fetchClearance()
     fetchFinanceEntries()
-  }, [fetchClearance, fetchFinanceEntries, refreshUser])
+
+    // Fetch PDF download setting
+    if (token) {
+      fetch('/api/admin/settings', { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.json())
+        .then((data) => setPdfEnabled(data.pdf_download_enabled !== 'false'))
+        .catch(() => setPdfEnabled(true))
+    }
+  }, [fetchClearance, fetchFinanceEntries, refreshUser, token])
 
   // Poll every 30 seconds
   useEffect(() => {
@@ -162,26 +172,23 @@ export default function ClearanceDetailPage() {
   /* Role checks */
   const isHRBP = user ? hasRole(user, 'HRBP') : false
   const isSuperAdmin = user ? hasRole(user, 'SUPER_ADMIN') : false
+  const isPayrollManager = user ? hasRole(user, 'PAYROLL_MANAGER') : false
   const userSectionKey = user ? getUserSectionKey(user) : null
-  const isDeptApprover =
-    user
-      ? hasAnyRole(user, [
-          'DEPT_APPROVER_IR',
-          'DEPT_APPROVER_IT',
-          'DEPT_APPROVER_SUPPLY',
-          'DEPT_APPROVER_ICS',
-          'DEPT_APPROVER_SECURITY',
-          'DEPT_APPROVER_OTHER',
-          'DEPT_APPROVER_HEAD',
-          'DEPT_APPROVER_OD',
-          'DEPT_APPROVER_HR',
-          'DEPT_APPROVER_FINANCE',
-        ])
-      : false
+  const isDeptApprover = user ? user.roles.some((r) => r.startsWith('DEPT_APPROVER_')) : false
+  const isSubjectEmployee = clearance?.is_subject_employee ?? false
 
   const sections = clearance?.sections ?? []
-  // In approvals view, only show sections where the current user can act
-  const visibleSections = isApprovalsView ? sections.filter((s) => s.can_act) : sections
+
+  // Returns true if the current user is assigned to this section (section-level or any item)
+  const isAssignedToSection = (sec: ClearanceSection): boolean => {
+    if (sec.approver_id === user?.id) return true
+    return sec.items?.some((item) => item.assigned_approver_id === user?.id) ?? false
+  }
+
+  // In approvals view: show sections the user can act on OR is assigned to (so approved sections stay visible read-only)
+  const visibleSections = isApprovalsView
+    ? sections.filter((s) => s.can_act || isAssignedToSection(s))
+    : sections
   const currentSection = visibleSections.find((s) => s.section_key === activeSection)
 
   // Use server-computed can_act flag — avoids stale client-side role issues
@@ -212,6 +219,35 @@ export default function ClearanceDetailPage() {
     }
   }
 
+  const handleCompleteClearance = async () => {
+    if (!token) return
+    const res = await fetch(`/api/clearance/${id}/complete`, {
+      method: 'POST',
+      headers: authHeaders(),
+    })
+    if (res.ok) {
+      handleRefresh()
+    } else {
+      const body = await res.json().catch(() => ({}))
+      alert(body.error ?? 'Failed to complete clearance')
+    }
+  }
+
+  const handleUnlockClearance = async () => {
+    if (!token) return
+    const res = await fetch(`/api/clearance/${id}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'IN_PROGRESS' }),
+    })
+    if (res.ok) {
+      handleRefresh()
+    } else {
+      const body = await res.json().catch(() => ({}))
+      alert(body.error ?? 'Failed to unlock clearance')
+    }
+  }
+
   /* ── Render ── */
   if (loading) {
     return (
@@ -237,6 +273,7 @@ export default function ClearanceDetailPage() {
   }
 
   const emp = clearance.employee
+  const showDeductibles = isHRBP || isPayrollManager || isSubjectEmployee || isSuperAdmin
 
   return (
     <DashboardLayout>
@@ -258,7 +295,7 @@ export default function ClearanceDetailPage() {
             </svg>
             Refresh
           </Button>
-          {clearance.status === 'COMPLETED' && (
+          {clearance.status === 'COMPLETED' && pdfEnabled && (
             <Button size="sm" onClick={handleDownloadPDF}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -325,9 +362,9 @@ export default function ClearanceDetailPage() {
       </div>
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left/Center: section tabs */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-3">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             {/* Tab bar */}
             <div className="border-b border-gray-100 overflow-x-auto">
@@ -418,12 +455,18 @@ export default function ClearanceDetailPage() {
                         />
                       )}
 
-                      {/* Section action form — shown to the approver for action, or read-only when already actioned */}
-                      {(canActOnSection(currentSection) || currentSection.status === 'APPROVED' || isSuperAdmin) && (
+                      {/* Section action form */}
+                      {(canActOnSection(currentSection) ||
+                        currentSection.status === 'APPROVED' ||
+                        isSuperAdmin ||
+                        isHRBP ||
+                        isPayrollManager) && (
                         <SectionActionForm
                           key={currentSection.id + currentSection.status}
                           section={currentSection}
                           clearanceId={id}
+                          clearanceStatus={clearance.status}
+                          showDeductibles={showDeductibles}
                           onActionComplete={handleRefresh}
                         />
                       )}
@@ -444,8 +487,46 @@ export default function ClearanceDetailPage() {
             onRefresh={handleRefresh}
           />
 
-          {/* PDF download (only when completed) */}
-          {clearance.status === 'COMPLETED' && (
+          {/* Complete Clearance — payroll manager */}
+          {clearance.can_complete && (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-purple-800 mb-2">
+                Ready for Final Sign-off
+              </p>
+              <p className="text-xs text-purple-600 mb-3">
+                All sections have been approved. Complete the clearance to issue
+                the certificate.
+              </p>
+              <Button
+                className="w-full bg-purple-600 text-white hover:bg-purple-700 border-transparent"
+                onClick={handleCompleteClearance}
+              >
+                Complete Clearance
+              </Button>
+            </div>
+          )}
+
+          {/* Unlock Clearance — super admin only */}
+          {isSuperAdmin && clearance.status === 'COMPLETED' && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                Admin Override
+              </p>
+              <p className="text-xs text-gray-500 mb-3">
+                Reopen this clearance for further edits.
+              </p>
+              <Button
+                className="w-full"
+                variant="ghost"
+                onClick={handleUnlockClearance}
+              >
+                Unlock Clearance
+              </Button>
+            </div>
+          )}
+
+          {/* PDF download (only when completed and enabled) */}
+          {clearance.status === 'COMPLETED' && pdfEnabled && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <p className="text-sm font-medium text-green-800 mb-2">
                 Clearance Completed

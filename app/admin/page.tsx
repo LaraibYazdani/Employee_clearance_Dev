@@ -855,6 +855,8 @@ export default function AdminPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>('clearances')
   const [stats, setStats] = useState<Stats | null>(null)
+  const [pdfEnabled, setPdfEnabled] = useState<boolean | null>(null)
+  const [pdfToggling, setPdfToggling] = useState(false)
 
   useEffect(() => {
     if (isLoading) return
@@ -908,6 +910,31 @@ export default function AdminPage() {
     fetchStats()
   }, [token, user])
 
+  // Fetch system settings
+  useEffect(() => {
+    if (!token || !user?.roles.includes('SUPER_ADMIN')) return
+    fetch('/api/admin/settings', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((data) => setPdfEnabled(data.pdf_download_enabled !== 'false'))
+      .catch(() => setPdfEnabled(true))
+  }, [token, user])
+
+  const togglePdf = async () => {
+    if (!token || pdfEnabled === null) return
+    setPdfToggling(true)
+    try {
+      const newVal = !pdfEnabled
+      await fetch('/api/admin/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pdf_download_enabled: String(newVal) }),
+      })
+      setPdfEnabled(newVal)
+    } finally {
+      setPdfToggling(false)
+    }
+  }
+
   if (isLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -947,8 +974,8 @@ export default function AdminPage() {
         </span>
       </div>
 
-      {/* Quick links */}
-      <div className="mb-6">
+      {/* Quick links + system controls */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <button
           onClick={() => router.push('/admin/approvers')}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100 transition-colors"
@@ -958,6 +985,34 @@ export default function AdminPage() {
           </svg>
           Manage Approver Assignments
         </button>
+
+        {/* PDF download toggle */}
+        <div className="inline-flex items-center gap-3 px-4 py-2 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span className="text-sm font-medium text-gray-700">PDF Downloads</span>
+          <button
+            onClick={togglePdf}
+            disabled={pdfToggling || pdfEnabled === null}
+            className={[
+              'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50',
+              pdfEnabled ? 'bg-indigo-600' : 'bg-gray-300',
+            ].join(' ')}
+            role="switch"
+            aria-checked={pdfEnabled ?? false}
+          >
+            <span
+              className={[
+                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200',
+                pdfEnabled ? 'translate-x-4' : 'translate-x-0',
+              ].join(' ')}
+            />
+          </button>
+          <span className={`text-xs font-semibold ${pdfEnabled ? 'text-indigo-600' : 'text-gray-400'}`}>
+            {pdfEnabled === null ? '…' : pdfEnabled ? 'Enabled' : 'Disabled'}
+          </span>
+        </div>
       </div>
 
       {/* Stats */}

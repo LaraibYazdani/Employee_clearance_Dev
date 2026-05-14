@@ -84,7 +84,7 @@ export default function ApproverDashboard() {
   }, [fetchClearances])
 
   const pending = clearances.filter(
-    (c) => c.status === 'IN_PROGRESS' || c.status === 'DRAFT'
+    (c) => c.status !== 'COMPLETED' && c.status !== 'CANCELLED'
   )
   const completed = clearances.filter(
     (c) => c.status === 'COMPLETED' || c.status === 'CANCELLED'
@@ -93,8 +93,11 @@ export default function ApproverDashboard() {
   const displayList = activeTab === 'pending' ? pending : completed
 
   const getSectionStatus = (c: ClearanceRequest) => {
-    if (!sectionKey || !c.sections) return null
-    const sec = c.sections.find((s) => s.section_key === sectionKey)
+    if (!c.sections) return null
+    // Prefer server-tagged section, then fall back to role-derived key
+    const sec =
+      c.sections.find((s: any) => s.is_my_section) ??
+      (sectionKey ? c.sections.find((s) => s.section_key === sectionKey) : null)
     return sec?.status ?? null
   }
 
@@ -199,7 +202,7 @@ export default function ApproverDashboard() {
                     'Department',
                     'Date of Leaving',
                     'Days Until Leaving',
-                    'Section Status',
+                    'Clearance Status',
                     'Actions',
                   ].map((h) => (
                     <th
@@ -257,7 +260,7 @@ export default function ApproverDashboard() {
                     'Department',
                     'Date of Leaving',
                     'Days Until Leaving',
-                    'Section Status',
+                    'Clearance Status',
                     'Actions',
                   ].map((h) => (
                     <th
@@ -295,11 +298,7 @@ export default function ApproverDashboard() {
                         <DaysCell dateOfLeaving={c.date_of_leaving} />
                       </td>
                       <td className="px-4 py-3">
-                        {secStatus ? (
-                          <Badge status={secStatus} />
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
+                        <Badge status={c.status} />
                       </td>
                       <td className="px-4 py-3">
                         <Button

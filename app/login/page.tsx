@@ -54,9 +54,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-blue-50 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen relative flex flex-col items-center justify-center p-4">
+      {/* Background image */}
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url('/auth-bg.jpeg')" }}
+      />
+      {/* Blur + dark overlay */}
+      <div className="absolute inset-0 backdrop-blur-sm bg-black/40" />
       {/* Card */}
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+      <div className="relative z-10 w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
         {/* Header band */}
         <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-8 py-8 text-center">
           <div className="flex items-center justify-center h-12 w-12 mx-auto rounded-xl bg-white/20 mb-4">
@@ -64,7 +71,7 @@ export default function LoginPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-white">Packages Ltd.</h1>
+          <h1 className="text-xl font-bold text-white">Packages Group</h1>
           <p className="text-indigo-200 text-sm mt-1">Employee Clearance Portal</p>
         </div>
 
@@ -125,8 +132,8 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <p className="mt-6 text-xs text-gray-400">
-        &copy; {new Date().getFullYear()} Packages Ltd. &mdash; All rights reserved
+      <p className="relative z-10 mt-6 text-xs text-gray-300">
+        &copy; {new Date().getFullYear()} Packages Group &mdash; All rights reserved
       </p>
     </div>
   )

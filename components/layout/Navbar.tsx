@@ -95,7 +95,7 @@ export default function Navbar() {
               </svg>
             </div>
             <div className="hidden sm:block">
-              <p className="text-xs font-semibold text-indigo-600 leading-none">Packages Ltd.</p>
+              <p className="text-xs font-semibold text-indigo-600 leading-none">Packages Group</p>
               <p className="text-sm font-bold text-gray-900 leading-tight">Employee Clearance Portal</p>
             </div>
           </div>
@@ -111,10 +111,7 @@ export default function Navbar() {
                 <NavLink href="/dashboard/approver" label="My Approvals" currentPath={pathname} />
               )}
               {isSuperAdmin && (
-                <>
-                  <NavLink href="/admin" label="Admin Panel" currentPath={pathname} />
-                  <NavLink href="/admin/clearances" label="All Clearances" currentPath={pathname} />
-                </>
+                <NavLink href="/admin" label="Admin Panel" currentPath={pathname} />
               )}
             </nav>
           )}

@@ -43,7 +43,8 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
   const isOwnerHRBP = user.roles.includes('HRBP') && clearance.initiated_by_hrbp_id === user.id
   const isSubjectEmployee = clearance.employee_id === user.id
   const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
-  if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isDeptApprover) {
+  const isPayrollManager = user.roles.includes('PAYROLL_MANAGER')
+  if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isDeptApprover && !isPayrollManager) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -52,10 +53,8 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
   }
 
   const buffer = fs.readFileSync(attachment.stored_path)
-  const isImage = attachment.mime_type.startsWith('image/')
-  const disposition = isImage
-    ? `inline; filename="${attachment.original_name}"`
-    : `attachment; filename="${attachment.original_name}"`
+  // Serve all supported types inline (images + PDFs open in browser tab)
+  const disposition = `inline; filename="${attachment.original_name}"`
 
   return new NextResponse(buffer, {
     headers: {
@@ -86,7 +85,7 @@ export const DELETE = withAuth(async (req: AuthenticatedRequest, context: any) =
           clearance_section: {
             include: {
               clearance_request: {
-                select: { id: true, employee_id: true, initiated_by_hrbp_id: true },
+                select: { id: true, status: true, employee_id: true, initiated_by_hrbp_id: true },
               },
             },
           },
@@ -109,10 +108,10 @@ export const DELETE = withAuth(async (req: AuthenticatedRequest, context: any) =
     return NextResponse.json({ error: 'Forbidden: only the uploader can delete this attachment' }, { status: 403 })
   }
 
-  // Cannot delete if the item is already APPROVED
-  if (attachment.clearance_item.status === 'APPROVED') {
+  // Cannot delete once clearance is fully completed
+  if (clearance.status === 'COMPLETED') {
     return NextResponse.json(
-      { error: 'Cannot delete attachments from an approved item' },
+      { error: 'Cannot delete attachments from a completed clearance' },
       { status: 409 }
     )
   }

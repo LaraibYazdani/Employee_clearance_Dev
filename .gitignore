@@ -41,3 +41,6 @@ next-env.d.ts
 
 # debug endpoints — unauthenticated, not for deployment
 /app/api/debug/
+
+# Claude Code local settings
+.claude/

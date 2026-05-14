@@ -19,7 +19,10 @@ export interface ClearanceRequest {
   id: string
   employee_id: string
   initiated_by_hrbp_id: string
-  status: 'DRAFT' | 'IN_PROGRESS' | 'PENDING_HRBP' | 'COMPLETED' | 'CANCELLED'
+  status: 'DRAFT' | 'IN_PROGRESS' | 'PENDING_HRBP' | 'PENDING_PAYROLL' | 'COMPLETED' | 'CANCELLED'
+  can_complete?: boolean
+  is_payroll_manager?: boolean
+  is_subject_employee?: boolean
   date_of_leaving?: string
   issued_by?: string
   issuance_date?: string
@@ -71,6 +74,9 @@ export interface ClearanceItem {
   status: 'PENDING' | 'NA' | 'APPROVED' | 'FLAGGED'
   assigned_approver_id?: string
   assigned_approver_name?: string
+  deductible_description?: string | null
+  deductible_amount?: string | null
+  show_deductibles?: boolean
   attachments?: ClearanceItemAttachment[]
 }
 
@@ -106,5 +112,6 @@ export type PortalRole =
   | 'DEPT_APPROVER_OD'
   | 'DEPT_APPROVER_HR'
   | 'DEPT_APPROVER_FINANCE'
+  | 'PAYROLL_MANAGER'
   | 'EMPLOYEE'
   | 'SUPER_ADMIN'
