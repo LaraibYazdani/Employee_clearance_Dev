@@ -65,6 +65,7 @@ model ClearanceRequest {
   laptop_buyback      String?
   vehicle_loan        String?
   sim_transfer        String?
+  exit_interview      String?
   other_query         String?   @db.Text
   pdf_generated       Boolean   @default(false)
   pdf_generated_at    DateTime?

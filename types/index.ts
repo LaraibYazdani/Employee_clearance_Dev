@@ -30,6 +30,7 @@ export interface ClearanceRequest {
   laptop_buyback?: string | null
   vehicle_loan?: string | null
   sim_transfer?: string | null
+  exit_interview?: string | null
   other_query?: string | null
   pdf_generated: boolean
   pdf_generated_at?: string

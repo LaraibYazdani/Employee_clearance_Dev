@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { SECTION_ROLE_MAP } from '@/lib/clearance-config'
+import fs from 'fs'
 
 // ---------------------------------------------------------------------------
 // GET /api/clearance/[id]
@@ -332,13 +333,31 @@ export const DELETE = withAuth(async (req: AuthenticatedRequest, context: any) =
       where: { clearance_request_id: id },
     })
 
-    // 4. Clearance items (references clearance_section_id, which will be deleted next)
+    // 4. Collect all attachment file paths, delete files from disk, then delete DB rows
     const sections = await prisma.clearanceSection.findMany({
       where: { clearance_request_id: id },
       select: { id: true },
     })
 
     for (const section of sections) {
+      const items = await prisma.clearanceItem.findMany({
+        where: { clearance_section_id: section.id },
+        select: { id: true },
+      })
+      for (const item of items) {
+        const attachments = await prisma.clearanceItemAttachment.findMany({
+          where: { clearance_item_id: item.id },
+          select: { stored_path: true },
+        })
+        for (const att of attachments) {
+          try {
+            if (fs.existsSync(att.stored_path)) fs.unlinkSync(att.stored_path)
+          } catch (err) {
+            console.error('[DELETE clearance] failed to delete file:', att.stored_path, err)
+          }
+        }
+        await prisma.clearanceItemAttachment.deleteMany({ where: { clearance_item_id: item.id } })
+      }
       await prisma.clearanceItem.deleteMany({
         where: { clearance_section_id: section.id },
       })

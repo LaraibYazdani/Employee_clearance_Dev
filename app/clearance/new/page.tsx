@@ -18,6 +18,7 @@ interface FormData {
   laptop_buyback: string
   vehicle_loan: string
   sim_transfer: string
+  exit_interview: string
   other_query: string
 }
 
@@ -462,6 +463,7 @@ export default function InitiateClearancePage() {
     laptop_buyback: '',
     vehicle_loan: '',
     sim_transfer: '',
+    exit_interview: '',
     other_query: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -484,7 +486,8 @@ export default function InitiateClearancePage() {
     formData.date_of_leaving !== '' &&
     formData.laptop_buyback !== '' &&
     formData.vehicle_loan !== '' &&
-    formData.sim_transfer !== ''
+    formData.sim_transfer !== '' &&
+    formData.exit_interview !== ''
 
   const handleSubmit = async () => {
     if (!selectedEmployee || !token) return
@@ -504,6 +507,7 @@ export default function InitiateClearancePage() {
           laptopBuyback: formData.laptop_buyback || undefined,
           vehicleLoan: formData.vehicle_loan || undefined,
           simTransfer: formData.sim_transfer || undefined,
+          exitInterview: formData.exit_interview || undefined,
           otherQuery: formData.other_query || undefined,
         }),
       })
@@ -619,19 +623,24 @@ export default function InitiateClearancePage() {
                 </h4>
                 <div className="space-y-5">
                   <YesNoNa
-                    label="Do you wish to buyback the laptop?"
+                    label="Does the employee wish to buyback the laptop?"
                     value={formData.laptop_buyback}
                     onChange={setField('laptop_buyback')}
                   />
                   <YesNoNa
-                    label="Do you wish to settle your Vehicle Loan?"
+                    label="Does the employee wish to settle their Vehicle Loan?"
                     value={formData.vehicle_loan}
                     onChange={setField('vehicle_loan')}
                   />
                   <YesNoNa
-                    label="Do you want to transfer your company provided SIM card to your name?"
+                    label="Does the employee want to transfer their company provided SIM card to their name?"
                     value={formData.sim_transfer}
                     onChange={setField('sim_transfer')}
+                  />
+                  <YesNoNa
+                    label="Has the Exit Interview been conducted?"
+                    value={formData.exit_interview}
+                    onChange={setField('exit_interview')}
                   />
                   <div>
                     <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
@@ -713,6 +722,7 @@ export default function InitiateClearancePage() {
                 <SummaryRow label="Laptop Buyback" value={formData.laptop_buyback} />
                 <SummaryRow label="Vehicle Loan" value={formData.vehicle_loan} />
                 <SummaryRow label="SIM Transfer" value={formData.sim_transfer} />
+                <SummaryRow label="Exit Interview" value={formData.exit_interview} />
                 {formData.other_query && (
                   <SummaryRow label="Other Query" value={formData.other_query} />
                 )}
