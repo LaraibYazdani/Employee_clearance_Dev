@@ -139,8 +139,16 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       let displayApproverId: string | null = null
       let displayApproverName: string | null = null
       if (s.section_key === 'DEPT_HEAD' || s.section_key === 'LINE_MANAGER') {
-        displayApproverId = lineManagerId
-        displayApproverName = lineManagerId ? (approverNameMap.get(lineManagerId) ?? null) : null
+        // For pending sections, show the current line manager who needs to approve
+        // For approved/denied sections, show who actually approved/denied it
+        if (s.status === 'PENDING') {
+          displayApproverId = lineManagerId
+          displayApproverName = lineManagerId ? (approverNameMap.get(lineManagerId) ?? null) : null
+        } else {
+          // Section is approved/denied/locked - show who actually acted on it
+          displayApproverId = s.approver_id
+          displayApproverName = s.approver_name
+        }
       } else if (sectionLevelApproverId) {
         displayApproverId = sectionLevelApproverId
         displayApproverName = approverNameMap.get(sectionLevelApproverId) ?? null
