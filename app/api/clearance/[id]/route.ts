@@ -150,8 +150,13 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
           displayApproverName = s.approver_name
         }
       } else if (sectionLevelApproverId) {
-        displayApproverId = sectionLevelApproverId
-        displayApproverName = approverNameMap.get(sectionLevelApproverId) ?? null
+        if (s.status !== 'PENDING') {
+          displayApproverId = s.approver_id
+          displayApproverName = s.approver_name
+        } else {
+          displayApproverId = sectionLevelApproverId
+          displayApproverName = approverNameMap.get(sectionLevelApproverId) ?? null
+        }
       }
 
       // Enhance items with live assignment info
