@@ -8,6 +8,7 @@ import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import NotificationBell from '@/components/ui/NotificationBell'
 import { Notification } from '@/types'
+import { IS_TEST_SERVER } from '@/lib/site-config'
 
 function getRoleBadgeLabel(roles: string[]): string {
   if (roles.includes('SUPER_ADMIN')) return 'Super Admin'
@@ -96,7 +97,14 @@ export default function Navbar() {
             </div>
             <div className="hidden sm:block">
               <p className="text-xs font-semibold text-indigo-600 leading-none">Packages Group</p>
-              <p className="text-sm font-bold text-gray-900 leading-tight">Employee Clearance Portal</p>
+              <p className="text-sm font-bold text-gray-900 leading-tight">
+                Employee Clearance Portal
+                {IS_TEST_SERVER && (
+                  <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide bg-amber-400 text-amber-950 px-1.5 py-0.5 rounded">
+                    Test
+                  </span>
+                )}
+              </p>
             </div>
           </div>
 

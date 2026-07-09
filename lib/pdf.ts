@@ -1,6 +1,7 @@
 import puppeteer from 'puppeteer'
 import { prisma } from './prisma'
 import { SECTION_LABELS } from './clearance-config'
+import { IS_TEST_SERVER, PDF_TEST_WATERMARK_HTML } from './site-config'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -197,7 +198,7 @@ function buildHTML(data: {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Employee Exit Clearance Form</title>
+  <title>${IS_TEST_SERVER ? '[TEST] ' : ''}Employee Exit Clearance Form</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -233,6 +234,8 @@ function buildHTML(data: {
   </style>
 </head>
 <body>
+
+  ${PDF_TEST_WATERMARK_HTML}
 
   <!-- ===== HEADER ===== -->
   <div style="text-align:center;margin-bottom:20px;border-bottom:3px double #333;padding-bottom:12px;">
@@ -364,6 +367,7 @@ function buildHTML(data: {
     <div>
       <p style="font-size:10px;color:#666;">
         This document is system-generated from the Packages Ltd. Employee Exit Clearance Portal.
+        ${IS_TEST_SERVER ? '<strong style="color:#b91c1c;">(TEST / DEVELOPMENT DOCUMENT &mdash; NOT VALID FOR OFFICIAL USE)</strong>' : ''}
       </p>
       <p style="font-size:10px;color:#666;">
         Clearance ID: ${clearance.id} &nbsp;|&nbsp; Generated on: ${fmtDate(new Date().toISOString())}
@@ -438,7 +442,7 @@ export async function generateClearancePDF(clearanceId: string): Promise<Buffer>
       headerTemplate: '<div></div>',
       footerTemplate: `
         <div style="width:100%;font-size:9px;color:#888;text-align:center;padding:0 12mm;">
-          Packages Ltd. &mdash; Employee Exit Clearance Form
+          ${IS_TEST_SERVER ? '<strong style="color:#b91c1c;">TEST DOCUMENT</strong> &mdash; ' : ''}Packages Ltd. &mdash; Employee Exit Clearance Form
           &nbsp;|&nbsp;
           Page <span class="pageNumber"></span> of <span class="totalPages"></span>
         </div>`,

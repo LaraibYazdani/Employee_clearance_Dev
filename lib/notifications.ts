@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/prisma'
 import { SECTION_LABELS } from '@/lib/clearance-config'
+import { COMPANY_NAME, EMAIL_SUBJECT_PREFIX, EMAIL_TEST_BANNER_HTML, IS_TEST_SERVER } from '@/lib/site-config'
 
 // ---------------------------------------------------------------------------
 // Nodemailer transport
@@ -90,7 +91,7 @@ export async function sendEmail(params: {
     const mailResult = await transport.sendMail({
       from: process.env.SMTP_FROM || 'clearance-portal@company.com',
       to: params.to,
-      subject: params.subject,
+      subject: `${EMAIL_SUBJECT_PREFIX}${params.subject}`,
       html: params.html,
     })
 
@@ -117,10 +118,11 @@ function emailWrapper(body: string): string {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f3f4f6; padding: 24px;">
       <div style="background: #ffffff; border-radius: 8px; padding: 32px; border: 1px solid #e5e7eb;">
+        ${EMAIL_TEST_BANNER_HTML}
         ${body}
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
         <p style="color: #374151; font-size: 14px; margin: 0 0 2px 0;">Regards,</p>
-        <p style="color: #111827; font-size: 14px; font-weight: 600; margin: 0 0 16px 0;">Packages Group</p>
+        <p style="color: #111827; font-size: 14px; font-weight: 600; margin: 0 0 16px 0;">${COMPANY_NAME}${IS_TEST_SERVER ? ' (Development/Testing Server)' : ''}</p>
         <p style="color: #9ca3af; font-size: 11px; margin: 0;">
           This is a system-generated email from the Employee Clearance Portal. Please do not reply directly to this message.
         </p>

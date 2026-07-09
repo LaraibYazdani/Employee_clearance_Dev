@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
+import { IS_TEST_SERVER } from '@/lib/site-config'
 
 function getRoleRedirect(roles: string[]): string {
   if (roles.includes('SUPER_ADMIN')) return '/admin'
@@ -71,7 +72,14 @@ export default function LoginPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-white">Packages Group</h1>
+          <h1 className="text-xl font-bold text-white">
+            Packages Group
+            {IS_TEST_SERVER && (
+              <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide bg-amber-400 text-amber-950 px-1.5 py-0.5 rounded">
+                Testing
+              </span>
+            )}
+          </h1>
           <p className="text-indigo-200 text-sm mt-1">Employee Clearance Portal</p>
         </div>
 
@@ -134,6 +142,7 @@ export default function LoginPage() {
 
       <p className="relative z-10 mt-6 text-xs text-gray-300">
         &copy; {new Date().getFullYear()} Packages Group &mdash; All rights reserved
+        {IS_TEST_SERVER && <> &mdash; Development/Testing Server</>}
       </p>
     </div>
   )
