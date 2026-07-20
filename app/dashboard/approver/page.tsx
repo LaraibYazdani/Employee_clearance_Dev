@@ -49,7 +49,7 @@ export default function ApproverDashboard() {
   // Role guard — redirect users without any DEPT_APPROVER_* role
   useEffect(() => {
     if (isLoading) return
-    if (!user || !user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))) {
+    if (!user || (!user.roles.some((r) => r.startsWith('DEPT_APPROVER_')) && !user.roles.includes('LINE_MANAGER'))) {
       router.replace('/clearance')
     }
   }, [user, isLoading, router])

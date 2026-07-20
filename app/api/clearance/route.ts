@@ -29,11 +29,18 @@ async function syncLineManagerToDb(employeeSfId: string, employeeDbId: string): 
 
   const existingManager = await prisma.user.findUnique({
     where: { sf_employee_id: managerId },
-    select: { id: true },
+    select: { id: true, roles: true },
   })
 
   if (existingManager) {
     managerDbId = existingManager.id
+    const existingRoles = existingManager.roles as string[]
+    if (!existingRoles.includes('LINE_MANAGER')) {
+      await prisma.user.update({
+        where: { id: existingManager.id },
+        data: { roles: [...existingRoles, 'LINE_MANAGER'] },
+      })
+    }
   } else {
     // Import manager profile from SF
     const [profile, managerJob] = await Promise.all([
@@ -61,7 +68,7 @@ async function syncLineManagerToDb(employeeSfId: string, employeeDbId: string): 
         division: profile.division ?? '',
         company: companyName,
         company_code: companyCode,
-        roles: ['EMPLOYEE'],
+        roles: ['EMPLOYEE', 'LINE_MANAGER'],
         sf_synced_at: new Date(),
       },
       select: { id: true },
@@ -113,6 +120,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
 
     // Role-based scoping
     const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
+    const isLineManager = user.roles.includes('LINE_MANAGER')
     const isPayrollManager = user.roles.includes('PAYROLL_MANAGER')
     let assignedSectionKeys = new Set<string>()
 
@@ -134,33 +142,30 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
           : []),
       ]
       where.status = { in: ['PENDING_PAYROLL', 'COMPLETED'] }
-    } else if (isDeptApprover) {
-      // Find company codes + section keys where this user has live ApproverAssignment rows
-      const liveAssignments = await prisma.approverAssignment.findMany({
-        where: { approver_id: user.id },
-        select: { company_code: true, section_key: true },
-      })
-      const uniqueCompanies = Array.from(new Set(liveAssignments.map((a) => a.company_code)))
-      const assignedCompanyCodes = uniqueCompanies
-      assignedSectionKeys = new Set(liveAssignments.map((a) => a.section_key))
-
-      // Show clearances for:
-      // 1. Companies where user has item/section assignments (live)
-      // 2. Clearances where user is the employee's line manager (DEPT_HEAD/LINE_MANAGER)
-      // 3. Clearances where user is stored as approver on any section (covers re-imports/changes)
-      // No status filter — approvers see all clearances they were/are involved in
-      const orConditions: any[] = []
-      if (assignedCompanyCodes.length > 0) {
-        orConditions.push({ employee: { company_code: { in: assignedCompanyCodes } } })
+    } else if (isDeptApprover || isLineManager) {
+      // For dept approvers: also scope by company code assignments
+      if (isDeptApprover) {
+        const liveAssignments = await prisma.approverAssignment.findMany({
+          where: { approver_id: user.id },
+          select: { company_code: true, section_key: true },
+        })
+        const uniqueCompanies = Array.from(new Set(liveAssignments.map((a) => a.company_code)))
+        assignedSectionKeys = new Set(liveAssignments.map((a) => a.section_key))
+        const orConditions: any[] = []
+        if (uniqueCompanies.length > 0) {
+          orConditions.push({ employee: { company_code: { in: uniqueCompanies } } })
+        }
+        orConditions.push({ employee: { line_manager_id: user.id } })
+        orConditions.push({ clearance_sections: { some: { approver_id: user.id } } })
+        where.OR = orConditions
+      } else {
+        // Pure line manager — only see clearances where they are the line manager
+        // or are stored as section approver (handles edge cases)
+        where.OR = [
+          { employee: { line_manager_id: user.id } },
+          { clearance_sections: { some: { approver_id: user.id } } },
+        ]
       }
-      orConditions.push({ employee: { line_manager_id: user.id } })
-      orConditions.push({
-        clearance_sections: {
-          some: { approver_id: user.id },
-        },
-      })
-
-      where.OR = orConditions
     } else {
       // EMPLOYEE / unverified HRBP — default shows clearances they initiated;
       // ?view=mine shows clearances where they are the employee

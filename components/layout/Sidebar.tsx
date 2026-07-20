@@ -120,7 +120,7 @@ export default function Sidebar() {
   const visibleLinks = allLinks.filter((link) => {
     if (!link.roles) return true
     return link.roles.some((r) => {
-      if (r === 'DEPT_APPROVER_*') return roles.some((ur) => ur.startsWith('DEPT_APPROVER_'))
+      if (r === 'DEPT_APPROVER_*') return roles.some((ur) => ur.startsWith('DEPT_APPROVER_')) || roles.includes('LINE_MANAGER')
       return roles.includes(r)
     })
   })
