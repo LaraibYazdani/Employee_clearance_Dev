@@ -76,40 +76,71 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
 
   const existing = await prisma.user.findUnique({ where: { sf_employee_id: sf_user_id } })
 
-  let dbUser
-  if (!existing) {
-    dbUser = await prisma.user.create({
-      data: {
-        sf_employee_id: sf_user_id,
-        full_name: profile.displayName,
-        email: profile.email || `${sf_user_id}@packagesli.com`,
-        password_hash: placeholderHash,
-        grade: payGrade,
-        designation,
-        department: profile.department ?? '',
-        division: profile.division ?? '',
-        company: companyName,
-        company_code: companyCode,
-        roles: ['EMPLOYEE'],
-        sf_synced_at: new Date(),
-      },
-    })
-  } else {
-    dbUser = await prisma.user.update({
-      where: { id: existing.id },
-      data: {
-        full_name: profile.displayName,
-        email: profile.email || existing.email,
-        grade: payGrade,
-        designation,
-        department: profile.department ?? existing.department,
-        division: profile.division ?? existing.division,
-        company: companyName || existing.company,
-        company_code: companyCode || existing.company_code,
-        sf_synced_at: new Date(),
-      },
-    })
-  }
+  try {
+    let dbUser
+    if (!existing) {
+      const sfEmail = profile.email || `${sf_user_id}@packagesli.com`
+      try {
+        dbUser = await prisma.user.create({
+          data: {
+            sf_employee_id: sf_user_id,
+            full_name: profile.displayName,
+            email: sfEmail,
+            password_hash: placeholderHash,
+            grade: payGrade,
+            designation,
+            department: profile.department ?? '',
+            division: profile.division ?? '',
+            company: companyName,
+            company_code: companyCode,
+            roles: ['EMPLOYEE'],
+            sf_synced_at: new Date(),
+          },
+        })
+      } catch (createErr: any) {
+        if (createErr?.code === 'P2002' && createErr?.meta?.target === 'users_email_key') {
+          // SF email already belongs to another user (e.g. dummy@packages.com shared across employees)
+          // Fall back to a unique generated email
+          dbUser = await prisma.user.create({
+            data: {
+              sf_employee_id: sf_user_id,
+              full_name: profile.displayName,
+              email: `${sf_user_id}@packagesli.com`,
+              password_hash: placeholderHash,
+              grade: payGrade,
+              designation,
+              department: profile.department ?? '',
+              division: profile.division ?? '',
+              company: companyName,
+              company_code: companyCode,
+              roles: ['EMPLOYEE'],
+              sf_synced_at: new Date(),
+            },
+          })
+        } else {
+          throw createErr
+        }
+      }
+    } else {
+      dbUser = await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          full_name: profile.displayName,
+          email: profile.email || existing.email,
+          grade: payGrade,
+          designation,
+          department: profile.department ?? existing.department,
+          division: profile.division ?? existing.division,
+          company: companyName || existing.company,
+          company_code: companyCode || existing.company_code,
+          sf_synced_at: new Date(),
+        },
+      })
+    }
 
-  return NextResponse.json({ success: true, user: dbUser })
+    return NextResponse.json({ success: true, user: dbUser })
+  } catch (err) {
+    console.error('[employee-search POST] error:', err)
+    return NextResponse.json({ error: 'Failed to import employee' }, { status: 500 })
+  }
 })
