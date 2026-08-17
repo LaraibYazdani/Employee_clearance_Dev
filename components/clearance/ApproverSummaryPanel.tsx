@@ -81,7 +81,9 @@ export default function ApproverSummaryPanel({
                   </span>
                   {section.approver_name && (
                     <span className="text-xs text-gray-500 truncate block mt-0.5">
-                      {section.approver_name}
+                      {section.status === 'PENDING' && (section.assigned_approvers?.length ?? 0) > 1
+                        ? `Approvers: ${section.approver_name}`
+                        : section.approver_name}
                     </span>
                   )}
                 </div>

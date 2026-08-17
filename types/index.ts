@@ -49,6 +49,7 @@ export interface ClearanceSection {
   status: 'PENDING' | 'APPROVED' | 'DENIED' | 'LOCKED'
   approver_id?: string
   approver_name?: string
+  assigned_approvers?: { id: string; name: string }[]
   decision_at?: string
   note?: string
   items?: ClearanceItem[]
@@ -73,8 +74,9 @@ export interface ClearanceItem {
   description: string
   comments?: string
   status: 'PENDING' | 'NA' | 'APPROVED' | 'FLAGGED'
-  assigned_approver_id?: string
-  assigned_approver_name?: string
+  approver_id?: string
+  approver_name?: string
+  assigned_approvers?: { id: string; name: string }[]
   deductible_description?: string | null
   deductible_amount?: string | null
   show_deductibles?: boolean

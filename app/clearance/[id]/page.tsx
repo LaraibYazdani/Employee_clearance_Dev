@@ -182,7 +182,7 @@ export default function ClearanceDetailPage() {
   // Returns true if the current user is assigned to this section (section-level or any item)
   const isAssignedToSection = (sec: ClearanceSection): boolean => {
     if (sec.approver_id === user?.id) return true
-    return sec.items?.some((item) => item.assigned_approver_id === user?.id) ?? false
+    return sec.items?.some((item) => item.assigned_approvers?.some((a) => a.id === user?.id)) ?? false
   }
 
   // In approvals view: show sections the user can act on OR is assigned to (so approved sections stay visible read-only)

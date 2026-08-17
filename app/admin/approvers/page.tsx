@@ -30,7 +30,7 @@ interface Assignment {
 interface SectionItem {
   item_key: string
   description: string
-  assignment: Assignment | null
+  assignments: Assignment[]
 }
 
 interface Section {
@@ -278,7 +278,7 @@ export default function ApproverManagementPage() {
     }
   }
 
-  const removeApprover = async (sectionKey: string, itemKey: string) => {
+  const removeApprover = async (sectionKey: string, itemKey: string, approverId: string) => {
     try {
       await fetch('/api/admin/approvers', {
         method: 'DELETE',
@@ -287,6 +287,7 @@ export default function ApproverManagementPage() {
           company_code: selectedCompany,
           section_key: sectionKey,
           item_key: itemKey,
+          approver_id: approverId,
         }),
       })
       await fetchMatrix()
@@ -404,6 +405,7 @@ export default function ApproverManagementPage() {
   }
 
   const removePayrollManager = async () => {
+    if (!payrollManager) return
     try {
       await fetch('/api/admin/approvers', {
         method: 'DELETE',
@@ -412,6 +414,7 @@ export default function ApproverManagementPage() {
           company_code: selectedCompany,
           section_key: 'PAYROLL_MANAGER',
           item_key: 'section',
+          approver_id: payrollManager.approver.id,
         }),
       })
       await fetchMatrix()
@@ -798,15 +801,29 @@ export default function ApproverManagementPage() {
                                     </div>
                                   )}
                                 </div>
-                              ) : item.assignment ? (
-                                <div className="flex items-center gap-2">
-                                  <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0">
-                                    {item.assignment.approver.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-800">{item.assignment.approver.full_name}</p>
-                                    <p className="text-xs text-gray-400">{item.assignment.approver.designation}</p>
-                                  </div>
+                              ) : item.assignments.length > 0 ? (
+                                <div className="flex flex-col gap-1.5">
+                                  {item.assignments.map((a) => (
+                                    <div key={a.id} className="flex items-center gap-2">
+                                      <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0">
+                                        {a.approver.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                                      </div>
+                                      <div className="flex-1">
+                                        <p className="text-sm font-medium text-gray-800">{a.approver.full_name}</p>
+                                        <p className="text-xs text-gray-400">{a.approver.designation}</p>
+                                      </div>
+                                      <button
+                                        onClick={() => removeApprover(section.section_key, a.item_key, a.approver.id)}
+                                        className="text-xs text-red-500 hover:text-red-700 px-1.5 py-0.5 rounded border border-red-200 hover:bg-red-50 transition-colors shrink-0"
+                                        title={`Remove ${a.approver.full_name}`}
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {item.assignments.length > 1 && (
+                                    <p className="text-[11px] text-gray-400 italic">Any one of these approving clears this item</p>
+                                  )}
                                 </div>
                               ) : (
                                 <span className="text-xs text-gray-400 italic">Unassigned</span>
@@ -832,15 +849,7 @@ export default function ApproverManagementPage() {
                                     disabled={isSavingThis}
                                     className="text-xs text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded border border-indigo-200 hover:bg-indigo-50 transition-colors"
                                   >
-                                    {item.assignment ? 'Change' : 'Assign'}
-                                  </button>
-                                )}
-                                {item.assignment && !isEditing && (
-                                  <button
-                                    onClick={() => removeApprover(section.section_key, item.assignment!.item_key)}
-                                    className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors"
-                                  >
-                                    Remove
+                                    {item.assignments.length > 0 ? 'Add Approver' : 'Assign'}
                                   </button>
                                 )}
                               </div>

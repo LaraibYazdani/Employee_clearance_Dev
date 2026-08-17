@@ -75,11 +75,15 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       select: { section_key: true, item_key: true, approver_id: true },
     })
 
-    // Build section_key → Map<item_key, approver_id>
-    const assignmentMap = new Map<string, Map<string, string>>()
+    // Build section_key → Map<item_key, approver_id[]> — an item can now have multiple
+    // OR-eligible approvers, so each item_key maps to an array rather than a single id.
+    const assignmentMap = new Map<string, Map<string, string[]>>()
     for (const a of allAssignments) {
       if (!assignmentMap.has(a.section_key)) assignmentMap.set(a.section_key, new Map())
-      assignmentMap.get(a.section_key)!.set(a.item_key, a.approver_id)
+      const itemMap = assignmentMap.get(a.section_key)!
+      const arr = itemMap.get(a.item_key) ?? []
+      arr.push(a.approver_id)
+      itemMap.set(a.item_key, arr)
     }
 
     // Payroll manager check
@@ -132,44 +136,37 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
 
     // Build sections with corrected can_act, live approver names, and item-level assignments
     const sections = clearance.clearance_sections.map((s) => {
-      const sectionItems = assignmentMap.get(s.section_key) ?? new Map<string, string>()
-      const sectionLevelApproverId = sectionItems.get('section') ?? null
+      const sectionItems = assignmentMap.get(s.section_key) ?? new Map<string, string[]>()
+      const sectionLevelApproverIds = sectionItems.get('section') ?? []
 
-      // Section-level display approver (shown in summary panel / section header)
-      let displayApproverId: string | null = null
-      let displayApproverName: string | null = null
+      const namesFor = (ids: string[]): { id: string; name: string }[] =>
+        ids.map((id) => ({ id, name: approverNameMap.get(id) ?? 'Unknown' }))
+
+      // Section-level display approvers (shown in summary panel / section header).
+      // Once decided, this is always the single person who actually acted; while
+      // still pending, it's every OR-eligible approver.
+      let displayApprovers: { id: string; name: string }[] = []
       if (s.section_key === 'DEPT_HEAD' || s.section_key === 'LINE_MANAGER') {
-        // For pending sections, show the current line manager who needs to approve
-        // For approved/denied sections, show who actually approved/denied it
         if (s.status === 'PENDING') {
-          displayApproverId = lineManagerId
-          displayApproverName = lineManagerId ? (approverNameMap.get(lineManagerId) ?? null) : null
-        } else {
-          // Section is approved/denied/locked - show who actually acted on it
-          displayApproverId = s.approver_id
-          displayApproverName = s.approver_name
+          displayApprovers = lineManagerId ? namesFor([lineManagerId]) : []
+        } else if (s.approver_id) {
+          displayApprovers = [{ id: s.approver_id, name: s.approver_name ?? 'Unknown' }]
         }
-      } else if (sectionLevelApproverId) {
-        if (s.status !== 'PENDING') {
-          displayApproverId = s.approver_id
-          displayApproverName = s.approver_name
-        } else {
-          displayApproverId = sectionLevelApproverId
-          displayApproverName = approverNameMap.get(sectionLevelApproverId) ?? null
-        }
+      } else if (sectionLevelApproverIds.length > 0) {
+        displayApprovers =
+          s.status !== 'PENDING' && s.approver_id
+            ? [{ id: s.approver_id, name: s.approver_name ?? 'Unknown' }]
+            : namesFor(sectionLevelApproverIds)
       }
 
-      // Enhance items with live assignment info
+      // Enhance items with live assignment info (multiple OR-eligible approvers per item)
       const items = s.clearance_items.map((item) => {
-        const assignedApproverId =
-          sectionLevelApproverId ?? sectionItems.get(item.item_key) ?? null
-        const assignedApproverName = assignedApproverId
-          ? (approverNameMap.get(assignedApproverId) ?? null)
-          : null
+        const assignedApproverIds = sectionLevelApproverIds.length > 0
+          ? sectionLevelApproverIds
+          : (sectionItems.get(item.item_key) ?? [])
         return {
           ...item,
-          assigned_approver_id: assignedApproverId ?? undefined,
-          assigned_approver_name: assignedApproverName ?? undefined,
+          assigned_approvers: namesFor(assignedApproverIds),
         }
       })
 
@@ -190,14 +187,14 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
           return requiredRole ? user.roles.includes(requiredRole) : false
         }
 
-        if (sectionLevelApproverId) {
-          // Section-level assignment: only that specific user can approve the whole section
-          return sectionLevelApproverId === user.id
+        if (sectionLevelApproverIds.length > 0) {
+          // Section-level assignment: any of the OR-eligible approvers can approve the whole section
+          return sectionLevelApproverIds.includes(user.id)
         }
 
         // Item-level assignments: user can act if they are assigned to at least one item
-        for (const approverId of Array.from(sectionItems.values())) {
-          if (approverId === user.id) return true
+        for (const approverIds of Array.from(sectionItems.values())) {
+          if (approverIds.includes(user.id)) return true
         }
         return false
       }
@@ -213,8 +210,9 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       return {
         ...s,
         label: resolvedLabel,
-        approver_id: displayApproverId ?? s.approver_id,
-        approver_name: displayApproverName ?? s.approver_name,
+        approver_id: displayApprovers[0]?.id ?? s.approver_id,
+        approver_name: displayApprovers.map((a) => a.name).join(', ') || s.approver_name,
+        assigned_approvers: displayApprovers,
         items,
         can_act: canAct(),
       }
@@ -228,7 +226,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       ...s,
       items: s.items.map((item: any) => ({
         ...item,
-        show_deductibles: canSeeDeductibles || item.assigned_approver_id === user.id,
+        show_deductibles: canSeeDeductibles || item.assigned_approvers?.some((a: any) => a.id === user.id),
       })),
     }))
 

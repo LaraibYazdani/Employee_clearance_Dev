@@ -62,11 +62,11 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       where: { company_code: companyCode, section_key: sectionKey },
       select: { item_key: true, approver_id: true },
     })
-    const sectionLevelApprover = itemAssignments.find((a) => a.item_key === 'section')?.approver_id ?? null
-    const itemLevelApprover = itemAssignments.find((a) => a.item_key === item.item_key)?.approver_id ?? null
-    const assignedApprover = sectionLevelApprover ?? itemLevelApprover
+    const sectionLevelApprovers = itemAssignments.filter((a) => a.item_key === 'section').map((a) => a.approver_id)
+    const itemLevelApprovers = itemAssignments.filter((a) => a.item_key === item.item_key).map((a) => a.approver_id)
+    const assignedApprovers = sectionLevelApprovers.length ? sectionLevelApprovers : itemLevelApprovers
 
-    const isAssignedApprover = assignedApprover === user.id
+    const isAssignedApprover = assignedApprovers.includes(user.id)
 
     // For LINE_MANAGER/DEPT_HEAD sections, the approver is the employee's line manager
     const isLineManagerSection = sectionKey === 'LINE_MANAGER' || sectionKey === 'DEPT_HEAD'

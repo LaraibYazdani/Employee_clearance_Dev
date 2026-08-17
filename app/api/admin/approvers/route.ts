@@ -16,10 +16,12 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
 
   const assignments = await getApproverMatrix(companyCode)
 
-  // Build a lookup map: section_key + item_key → assignment
-  const assignmentMap: Record<string, any> = {}
+  // Build a lookup map: section_key + item_key → all assignments for that key
+  const assignmentMap: Record<string, any[]> = {}
   for (const a of assignments) {
-    assignmentMap[`${a.section_key}::${a.item_key}`] = a
+    const key = `${a.section_key}::${a.item_key}`
+    if (!assignmentMap[key]) assignmentMap[key] = []
+    assignmentMap[key].push(a)
   }
 
   // Fetch ACTIVE sections from template for this company
@@ -60,21 +62,23 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       section_key: sectionKey,
       section_label: template.label,
       items: itemsToUse.length > 0 ? itemsToUse.map((item) => {
-        // If there's a section-level assignment, use that for all items (section-level override)
-        const sectionLevelAssignment = assignmentMap[`${sectionKey}::section`]
-        const itemAssignment = sectionLevelAssignment ?? assignmentMap[`${sectionKey}::${item.item_key}`]
-        
+        // If there are section-level assignments, they cover all items (section-level override)
+        const sectionLevelAssignments = assignmentMap[`${sectionKey}::section`]
+        const itemAssignments = (sectionLevelAssignments?.length
+          ? sectionLevelAssignments
+          : assignmentMap[`${sectionKey}::${item.item_key}`]) ?? []
+
         return {
           item_key: item.item_key,
           description: item.description,
-          assignment: itemAssignment ?? null,
+          assignments: itemAssignments,
         }
       }) : [
         // For sections with no items, create a section-level assignment
         {
           item_key: 'section',
           description: `${template.label} Section Approver`,
-          assignment: assignmentMap[`${sectionKey}::section`] ?? null,
+          assignments: assignmentMap[`${sectionKey}::section`] ?? [],
         }
       ],
     }
@@ -143,12 +147,12 @@ export const DELETE = withAuth(async (req: AuthenticatedRequest) => {
   }
 
   const body = await req.json()
-  const { company_code, section_key, item_key } = body
+  const { company_code, section_key, item_key, approver_id } = body
 
-  if (!company_code || !section_key || !item_key) {
-    return NextResponse.json({ error: 'company_code, section_key, item_key are required' }, { status: 400 })
+  if (!company_code || !section_key || !item_key || !approver_id) {
+    return NextResponse.json({ error: 'company_code, section_key, item_key, approver_id are required' }, { status: 400 })
   }
 
-  await removeApproverForItem(company_code, section_key, item_key)
+  await removeApproverForItem(company_code, section_key, item_key, approver_id)
   return NextResponse.json({ success: true })
 })

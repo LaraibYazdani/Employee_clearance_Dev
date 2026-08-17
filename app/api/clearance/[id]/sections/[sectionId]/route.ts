@@ -151,23 +151,29 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
     const now = nowPKT()
 
     // Shared: fetch item-level assignments for this section (used in both APPROVE and DENY)
+    // Multiple approvers may share the same item_key — OR logic: any one of them may act.
     const itemAssignments = await prisma.approverAssignment.findMany({
       where: { section_key: section.section_key, company_code: companyCode },
       select: { item_key: true, approver_id: true },
     })
-    const itemAssignmentMap = new Map<string, string>()
-    itemAssignments.forEach((a) => itemAssignmentMap.set(a.item_key, a.approver_id))
-    const sectionLevelAssignerId = itemAssignmentMap.get('section') ?? null
+    const itemAssignmentMap = new Map<string, string[]>()
+    itemAssignments.forEach((a) => {
+      const arr = itemAssignmentMap.get(a.item_key) ?? []
+      arr.push(a.approver_id)
+      itemAssignmentMap.set(a.item_key, arr)
+    })
+    const sectionLevelAssignerIds = itemAssignmentMap.get('section') ?? []
 
-    // Per-item authorization: section-level approver or super admin can act on any item;
+    // Per-item authorization: any section-level approver or super admin can act on any item;
     // item-level approvers can only act on their own items
     const authorizeItems = (items: typeof body.items): NextResponse | null => {
       if (!Array.isArray(items) || items.length === 0) return null
       if (isSuperAdmin) return null
       for (const item of items) {
-        const effectiveApprover =
-          sectionLevelAssignerId ?? (item.item_key ? itemAssignmentMap.get(item.item_key) : undefined)
-        if (effectiveApprover && effectiveApprover !== user.id) {
+        const effectiveApprovers = sectionLevelAssignerIds.length
+          ? sectionLevelAssignerIds
+          : (item.item_key ? itemAssignmentMap.get(item.item_key) : undefined) ?? []
+        if (effectiveApprovers.length > 0 && !effectiveApprovers.includes(user.id)) {
           return NextResponse.json(
             { error: 'Forbidden', message: 'You are not authorized to act on this item. It is assigned to another approver.' },
             { status: 403 }
@@ -186,8 +192,16 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
           body.items.map((item) => {
             const allowedStatuses = ['APPROVED', 'NA', 'PENDING']
             const status = item.status && allowedStatuses.includes(item.status) ? item.status : undefined
+            const isTerminalDecision = status === 'APPROVED' || status === 'NA'
             return prisma.clearanceItem.updateMany({
-              where: { id: item.id, clearance_section_id: sectionId },
+              // First-to-act-wins: when this update is recording a decision, only apply it
+              // if the item is still PENDING — a second approver's concurrent submit becomes
+              // a harmless no-op instead of overwriting the first approver's decision.
+              where: {
+                id: item.id,
+                clearance_section_id: sectionId,
+                ...(isTerminalDecision ? { status: 'PENDING' } : {}),
+              },
               data: {
                 ...(status ? { status } : {}),
                 ...(item.comments !== undefined ? { comments: item.comments } : {}),
@@ -197,7 +211,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
                 ...(item.deductible_amount !== undefined
                   ? { deductible_amount: item.deductible_amount !== null ? String(item.deductible_amount) : null }
                   : {}),
-                ...(status === 'APPROVED' || status === 'NA'
+                ...(isTerminalDecision
                   ? { approver_id: user.id, approver_name: user.full_name, decision_at: now }
                   : {}),
               },

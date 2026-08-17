@@ -109,7 +109,8 @@ export async function checkApproverDepartmentConflict(
 
 /**
  * Get the assigned approver for a specific clearance item.
- * Looks up approver_assignments by company_code + section_key + item_key.
+ * If multiple approvers are assigned, returns the first one found — callers
+ * that need the full OR-eligible list should use getApproversForItem instead.
  */
 export async function getApproverForItem(
   companyCode: string,
@@ -117,13 +118,11 @@ export async function getApproverForItem(
   itemKey: string
 ): Promise<{ id: string; full_name: string } | null> {
   try {
-    const assignment = await prisma.approverAssignment.findUnique({
+    const assignment = await prisma.approverAssignment.findFirst({
       where: {
-        company_code_section_key_item_key: {
-          company_code: companyCode,
-          section_key: sectionKey,
-          item_key: itemKey,
-        },
+        company_code: companyCode,
+        section_key: sectionKey,
+        item_key: itemKey,
       },
       include: {
         approver: { select: { id: true, full_name: true } },
@@ -133,6 +132,27 @@ export async function getApproverForItem(
   } catch {
     return null
   }
+}
+
+/**
+ * Get ALL approvers assigned to a specific clearance item (OR-eligible list).
+ */
+export async function getApproversForItem(
+  companyCode: string,
+  sectionKey: string,
+  itemKey: string
+): Promise<{ id: string; full_name: string }[]> {
+  const assignments = await prisma.approverAssignment.findMany({
+    where: {
+      company_code: companyCode,
+      section_key: sectionKey,
+      item_key: itemKey,
+    },
+    include: {
+      approver: { select: { id: true, full_name: true } },
+    },
+  })
+  return assignments.map((a) => a.approver)
 }
 
 /**
@@ -151,7 +171,10 @@ export async function getApproverMatrix(companyCode: string) {
 }
 
 /**
- * Upsert a single approver assignment.
+ * Add an approver assignment. Idempotent — assigning the same person to the
+ * same item twice is a no-op; assigning a different person adds another row
+ * alongside any existing approvers for that item (OR-logic: any one of them
+ * approving is sufficient).
  */
 export async function setApproverForItem(
   companyCode: string,
@@ -162,13 +185,14 @@ export async function setApproverForItem(
   const [result] = await Promise.all([
     prisma.approverAssignment.upsert({
       where: {
-        company_code_section_key_item_key: {
+        company_code_section_key_item_key_approver_id: {
           company_code: companyCode,
           section_key: sectionKey,
           item_key: itemKey,
+          approver_id: approverId,
         },
       },
-      update: { approver_id: approverId },
+      update: {},
       create: {
         company_code: companyCode,
         section_key: sectionKey,
@@ -182,41 +206,28 @@ export async function setApproverForItem(
 }
 
 /**
- * Remove a single approver assignment and revoke the role if they're no longer assigned.
+ * Remove one specific approver's assignment from an item and revoke their
+ * role if they're no longer assigned anywhere in this section.
  */
 export async function removeApproverForItem(
   companyCode: string,
   sectionKey: string,
-  itemKey: string
+  itemKey: string,
+  approverId: string
 ) {
   try {
-    // Get the approver ID before deleting
-    const assignment = await prisma.approverAssignment.findUnique({
-      where: {
-        company_code_section_key_item_key: {
-          company_code: companyCode,
-          section_key: sectionKey,
-          item_key: itemKey,
-        },
-      },
-      select: { approver_id: true },
-    })
-
-    // Delete the assignment
     const result = await prisma.approverAssignment.delete({
       where: {
-        company_code_section_key_item_key: {
+        company_code_section_key_item_key_approver_id: {
           company_code: companyCode,
           section_key: sectionKey,
           item_key: itemKey,
+          approver_id: approverId,
         },
       },
     })
 
-    // Revoke the role if they're no longer assigned to any items in this section
-    if (assignment?.approver_id) {
-      await revokeApproverRoleIfNotAssigned(assignment.approver_id, companyCode, sectionKey)
-    }
+    await revokeApproverRoleIfNotAssigned(approverId, companyCode, sectionKey)
 
     return result
   } catch {

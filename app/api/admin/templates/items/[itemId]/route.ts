@@ -60,8 +60,21 @@ export const DELETE = withAuth(async (req: AuthenticatedRequest, context: any) =
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
-    // Remove any per-item approver assignment and revoke role if no longer needed
-    await removeApproverForItem(item.company_code, item.section_key, item.item_key)
+    // Remove ALL approver assignments for this item (there may be several under
+    // OR-logic multi-approver) and revoke roles for anyone no longer assigned
+    const assignments = await prisma.approverAssignment.findMany({
+      where: {
+        company_code: item.company_code,
+        section_key: item.section_key,
+        item_key: item.item_key,
+      },
+      select: { approver_id: true },
+    })
+    await Promise.all(
+      assignments.map((a) =>
+        removeApproverForItem(item.company_code, item.section_key, item.item_key, a.approver_id)
+      )
+    )
 
     await prisma.clearanceItemTemplate.delete({ where: { id: itemId } })
     return NextResponse.json({ success: true })

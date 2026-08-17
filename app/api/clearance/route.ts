@@ -147,7 +147,10 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       // Show clearances for:
       // 1. Companies where user has item/section assignments (live)
       // 2. Clearances where user is the employee's line manager (DEPT_HEAD/LINE_MANAGER)
-      // 3. Clearances where user is stored as approver on any section (covers re-imports/changes)
+      // 3. Clearances with a live section_key assignment for this user — checked against the
+      //    live assignment set rather than the stale ClearanceSection.approver_id scalar, which
+      //    only ever recorded the first approver found at initiation time and would miss anyone
+      //    added as an additional (OR-logic) approver afterward
       // No status filter — approvers see all clearances they were/are involved in
       const orConditions: any[] = []
       if (assignedCompanyCodes.length > 0) {
@@ -156,7 +159,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       orConditions.push({ employee: { line_manager_id: user.id } })
       orConditions.push({
         clearance_sections: {
-          some: { approver_id: user.id },
+          some: { section_key: { in: Array.from(assignedSectionKeys) } },
         },
       })
 

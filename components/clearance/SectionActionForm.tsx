@@ -259,10 +259,11 @@ export default function SectionActionForm({
     if (user.roles.includes('HRBP')) return items
     // For read-only views, show everything
     if (isReadOnly) return items
-    const hasItemLevelAssignments = items.some((item) => item.assigned_approver_id)
+    const hasItemLevelAssignments = items.some((item) => item.assigned_approvers?.length)
     if (!hasItemLevelAssignments) return items
-    // Active pending section: only show items assigned to this user
-    return items.filter((item) => item.assigned_approver_id === user.id)
+    // Active pending section: only show items assigned to this user (any one of the
+    // OR-eligible approvers on that item)
+    return items.filter((item) => item.assigned_approvers?.some((a) => a.id === user.id))
   }, [items, user, isReadOnly])
 
   const updateItemComments = (id: string, comments: string) => {
@@ -337,10 +338,10 @@ export default function SectionActionForm({
     if (isCompleted) return false
     if (!user) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
-    // Assigned approver can edit
-    if (item.assigned_approver_id && item.assigned_approver_id === user.id) return true
+    // Any of the OR-eligible assigned approvers can edit
+    if (item.assigned_approvers?.some((a) => a.id === user.id)) return true
     // No item-level assignment: section-level approver owns all items
-    if (!item.assigned_approver_id && section.approver_id === user.id) return true
+    if (!item.assigned_approvers?.length && section.approver_id === user.id) return true
     return false
   }
 
@@ -398,7 +399,7 @@ export default function SectionActionForm({
     }
   }
 
-  const hasItemAssignments = items.some((i) => i.assigned_approver_id)
+  const hasItemAssignments = items.some((i) => i.assigned_approvers?.length)
   // Show deductible columns: controlled by parent (based on role) or if item has show_deductibles flag
   const showDeductibleCol = showDeductibles || items.some((i) => i.show_deductibles)
 
@@ -591,10 +592,26 @@ export default function SectionActionForm({
                       {/* Assigned to */}
                       {hasItemAssignments && (
                         <td className="px-3 py-2.5 text-xs text-gray-600 align-middle">
-                          {item.assigned_approver_name ? (
-                            <span className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full border border-blue-200 truncate max-w-[80px]" title={item.assigned_approver_name}>
-                              {item.assigned_approver_name.split(' ')[0]}
-                            </span>
+                          {item.status === 'APPROVED' || item.status === 'NA' ? (
+                            item.approver_name ? (
+                              <span className="inline-block px-2 py-0.5 bg-green-50 text-green-700 rounded-full border border-green-200 truncate max-w-[110px]" title={`Approved by ${item.approver_name}`}>
+                                ✓ {item.approver_name.split(' ')[0]}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 italic">—</span>
+                            )
+                          ) : item.assigned_approvers?.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {item.assigned_approvers.map((a) => (
+                                <span
+                                  key={a.id}
+                                  className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full border border-blue-200 truncate max-w-[80px]"
+                                  title={a.name}
+                                >
+                                  {a.name.split(' ')[0]}
+                                </span>
+                              ))}
+                            </div>
                           ) : (
                             <span className="text-gray-400 italic">—</span>
                           )}
@@ -631,7 +648,7 @@ export default function SectionActionForm({
         </div>
       ) : (
         <p className="text-sm text-gray-400 italic">
-          {items.some((item) => item.assigned_approver_id)
+          {items.some((item) => item.assigned_approvers?.length)
             ? 'No checklist items assigned to you for this section.'
             : 'No checklist items for this section.'}
         </p>

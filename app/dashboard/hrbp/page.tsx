@@ -79,7 +79,7 @@ export default function HRBPDashboard() {
   const { user, token, isLoading } = useAuth()
 
   // Role guard — SUPER_ADMIN and dept approvers have their own dashboards;
-  // everyone else (HRBP, EMPLOYEE) can use this page
+  // plain employees with no HRBP role have no business here either
   useEffect(() => {
     if (isLoading) return
     if (!user) { router.replace('/login'); return }
@@ -87,6 +87,11 @@ export default function HRBPDashboard() {
     // Only bounce pure dept-approvers (no HRBP role) to their own dashboard
     if (user.roles.some((r) => r.startsWith('DEPT_APPROVER_')) && !user.roles.includes('HRBP')) {
       router.replace('/dashboard/approver')
+      return
+    }
+    // Plain employees (no HRBP role yet) belong on their own clearance page
+    if (!user.roles.includes('HRBP')) {
+      router.replace('/clearance')
     }
   }, [user, isLoading, router])
 
