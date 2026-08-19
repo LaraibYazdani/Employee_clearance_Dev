@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { checkApproverDepartmentConflict, setApproverForItem } from '@/lib/approver-resolver'
+import { setApproverForItem } from '@/lib/approver-resolver'
 
 // POST /api/admin/approvers/bulk
 // Body: { company_code, section_key, approver_id }
@@ -27,18 +27,6 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
   })
   if (!approver) {
     return NextResponse.json({ error: 'Approver not found' }, { status: 404 })
-  }
-
-  // Enforce: one user can only be assigned to one department
-  const conflictingSection = await checkApproverDepartmentConflict(company_code, section_key, approver_id)
-  if (conflictingSection) {
-    return NextResponse.json(
-      {
-        error: 'Department conflict',
-        message: `${approver.full_name} is already assigned to the ${conflictingSection} department. A user can only be an approver for one department.`,
-      },
-      { status: 409 }
-    )
   }
 
   // Delete ALL existing item assignments for this section (both individual and section-level)

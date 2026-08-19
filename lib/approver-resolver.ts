@@ -84,30 +84,6 @@ async function revokeApproverRoleIfNotAssigned(
 }
 
 /**
- * Checks whether the given user is already assigned to a DIFFERENT department
- * for the same company. Returns the conflicting section_key if found, null otherwise.
- *
- * Rule: one user can only be an approver within one department (section_key).
- * They may approve multiple items within that department, but cannot appear
- * in any other department's assignments.
- */
-export async function checkApproverDepartmentConflict(
-  companyCode: string,
-  sectionKey: string,
-  approverId: string
-): Promise<string | null> {
-  const conflict = await prisma.approverAssignment.findFirst({
-    where: {
-      company_code: companyCode,
-      approver_id: approverId,
-      section_key: { not: sectionKey },
-    },
-    select: { section_key: true },
-  })
-  return conflict?.section_key ?? null
-}
-
-/**
  * Get the assigned approver for a specific clearance item.
  * If multiple approvers are assigned, returns the first one found — callers
  * that need the full OR-eligible list should use getApproversForItem instead.

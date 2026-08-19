@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { getApproverMatrix, setApproverForItem, removeApproverForItem, checkApproverDepartmentConflict } from '@/lib/approver-resolver'
+import { getApproverMatrix, setApproverForItem, removeApproverForItem } from '@/lib/approver-resolver'
 import { DEFAULT_SECTION_ITEMS, SECTION_LABELS } from '@/lib/clearance-config'
 
 // GET /api/admin/approvers?company=1000
@@ -108,20 +108,6 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
   const approver = await prisma.user.findUnique({ where: { id: approver_id }, select: { id: true, full_name: true } })
   if (!approver) {
     return NextResponse.json({ error: 'Approver not found' }, { status: 404 })
-  }
-
-  // PAYROLL_MANAGER is a special global role — skip the department conflict check
-  if (section_key !== 'PAYROLL_MANAGER') {
-    const conflictingSection = await checkApproverDepartmentConflict(company_code, section_key, approver_id)
-    if (conflictingSection) {
-      return NextResponse.json(
-        {
-          error: 'Department conflict',
-          message: `${approver.full_name} is already assigned to the ${conflictingSection} department. A user can only be an approver for one department.`,
-        },
-        { status: 409 }
-      )
-    }
   }
 
   // If assigning at section level (item_key = 'section'), clear all individual item assignments for this section
