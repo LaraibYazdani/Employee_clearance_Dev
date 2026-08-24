@@ -155,19 +155,24 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       where: { section_key: section.section_key, company_code: companyCode },
       select: { item_key: true, approver_id: true },
     })
-    const itemAssignmentMap = new Map<string, string>()
-    itemAssignments.forEach((a) => itemAssignmentMap.set(a.item_key, a.approver_id))
-    const sectionLevelAssignerId = itemAssignmentMap.get('section') ?? null
+    const itemAssignmentMap = new Map<string, string[]>()
+    for (const a of itemAssignments) {
+      const existing = itemAssignmentMap.get(a.item_key) ?? []
+      existing.push(a.approver_id)
+      itemAssignmentMap.set(a.item_key, existing)
+    }
+    const sectionLevelAssignerIds = itemAssignmentMap.get('section') ?? []
 
-    // Per-item authorization: section-level approver or super admin can act on any item;
-    // item-level approvers can only act on their own items
+    // Per-item authorization: any assigned approver or super admin can act on the item
     const authorizeItems = (items: typeof body.items): NextResponse | null => {
       if (!Array.isArray(items) || items.length === 0) return null
       if (isSuperAdmin) return null
       for (const item of items) {
-        const effectiveApprover =
-          sectionLevelAssignerId ?? (item.item_key ? itemAssignmentMap.get(item.item_key) : undefined)
-        if (effectiveApprover && effectiveApprover !== user.id) {
+        const effectiveApprovers =
+          sectionLevelAssignerIds.length > 0
+            ? sectionLevelAssignerIds
+            : (item.item_key ? (itemAssignmentMap.get(item.item_key) ?? []) : [])
+        if (effectiveApprovers.length > 0 && !effectiveApprovers.includes(user.id)) {
           return NextResponse.json(
             { error: 'Forbidden', message: 'You are not authorized to act on this item. It is assigned to another approver.' },
             { status: 403 }

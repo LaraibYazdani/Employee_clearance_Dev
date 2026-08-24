@@ -151,7 +151,8 @@ model ApproverAssignment {
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
-  @@unique([company_code, section_key, item_key])
+  @@unique([company_code, section_key, item_key, approver_id])
+  @@index([company_code, section_key, item_key])
   @@map("approver_assignments")
 }
 

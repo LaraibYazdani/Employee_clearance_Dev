@@ -73,6 +73,7 @@ export interface ClearanceItem {
   description: string
   comments?: string
   status: 'PENDING' | 'NA' | 'APPROVED' | 'FLAGGED'
+  assigned_approvers?: { id: string; name: string }[]
   assigned_approver_id?: string
   assigned_approver_name?: string
   deductible_description?: string | null

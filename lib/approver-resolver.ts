@@ -46,7 +46,6 @@ async function grantApproverRole(approverId: string, sectionKey: string): Promis
 /**
  * Revokes the corresponding DEPT_APPROVER_* role if the user is not assigned
  * to any item in that section across ANY company.
- * Roles are global on the user, so we must check all companies before revoking.
  */
 async function revokeApproverRoleIfNotAssigned(
   approverId: string,
@@ -55,7 +54,6 @@ async function revokeApproverRoleIfNotAssigned(
 ): Promise<void> {
   const role = sectionRole(sectionKey)
 
-  // Check across all companies — role is global, not per-company
   const stillAssigned = await prisma.approverAssignment.findFirst({
     where: {
       section_key: sectionKey,
@@ -64,10 +62,8 @@ async function revokeApproverRoleIfNotAssigned(
     select: { id: true },
   })
 
-  // Still assigned in at least one company — keep the role
   if (stillAssigned) return
 
-  // User is no longer assigned to this section — revoke the role
   const user = await prisma.user.findUnique({
     where: { id: approverId },
     select: { id: true, roles: true },
@@ -84,32 +80,7 @@ async function revokeApproverRoleIfNotAssigned(
 }
 
 /**
- * Checks whether the given user is already assigned to a DIFFERENT department
- * for the same company. Returns the conflicting section_key if found, null otherwise.
- *
- * Rule: one user can only be an approver within one department (section_key).
- * They may approve multiple items within that department, but cannot appear
- * in any other department's assignments.
- */
-export async function checkApproverDepartmentConflict(
-  companyCode: string,
-  sectionKey: string,
-  approverId: string
-): Promise<string | null> {
-  const conflict = await prisma.approverAssignment.findFirst({
-    where: {
-      company_code: companyCode,
-      approver_id: approverId,
-      section_key: { not: sectionKey },
-    },
-    select: { section_key: true },
-  })
-  return conflict?.section_key ?? null
-}
-
-/**
- * Get the assigned approver for a specific clearance item.
- * Looks up approver_assignments by company_code + section_key + item_key.
+ * Get the first assigned approver for a specific clearance item (single-approver compat).
  */
 export async function getApproverForItem(
   companyCode: string,
@@ -117,14 +88,8 @@ export async function getApproverForItem(
   itemKey: string
 ): Promise<{ id: string; full_name: string } | null> {
   try {
-    const assignment = await prisma.approverAssignment.findUnique({
-      where: {
-        company_code_section_key_item_key: {
-          company_code: companyCode,
-          section_key: sectionKey,
-          item_key: itemKey,
-        },
-      },
+    const assignment = await prisma.approverAssignment.findFirst({
+      where: { company_code: companyCode, section_key: sectionKey, item_key: itemKey },
       include: {
         approver: { select: { id: true, full_name: true } },
       },
@@ -133,6 +98,23 @@ export async function getApproverForItem(
   } catch {
     return null
   }
+}
+
+/**
+ * Get all assigned approvers for a specific clearance item.
+ */
+export async function getApproversForItem(
+  companyCode: string,
+  sectionKey: string,
+  itemKey: string
+): Promise<{ id: string; full_name: string }[]> {
+  const assignments = await prisma.approverAssignment.findMany({
+    where: { company_code: companyCode, section_key: sectionKey, item_key: itemKey },
+    include: {
+      approver: { select: { id: true, full_name: true } },
+    },
+  })
+  return assignments.map((a) => a.approver)
 }
 
 /**
@@ -151,7 +133,8 @@ export async function getApproverMatrix(companyCode: string) {
 }
 
 /**
- * Upsert a single approver assignment.
+ * Add an approver to an item (idempotent — no-op if already assigned).
+ * Multiple approvers per item are allowed; any one can approve.
  */
 export async function setApproverForItem(
   companyCode: string,
@@ -162,13 +145,14 @@ export async function setApproverForItem(
   const [result] = await Promise.all([
     prisma.approverAssignment.upsert({
       where: {
-        company_code_section_key_item_key: {
+        company_code_section_key_item_key_approver_id: {
           company_code: companyCode,
           section_key: sectionKey,
           item_key: itemKey,
+          approver_id: approverId,
         },
       },
-      update: { approver_id: approverId },
+      update: {},
       create: {
         company_code: companyCode,
         section_key: sectionKey,
@@ -182,43 +166,45 @@ export async function setApproverForItem(
 }
 
 /**
- * Remove a single approver assignment and revoke the role if they're no longer assigned.
+ * Remove an approver assignment.
+ * - If approverId is given: removes that specific approver from the item.
+ * - If approverId is omitted: removes ALL approvers for the item.
  */
 export async function removeApproverForItem(
   companyCode: string,
   sectionKey: string,
-  itemKey: string
+  itemKey: string,
+  approverId?: string
 ) {
   try {
-    // Get the approver ID before deleting
-    const assignment = await prisma.approverAssignment.findUnique({
-      where: {
-        company_code_section_key_item_key: {
-          company_code: companyCode,
-          section_key: sectionKey,
-          item_key: itemKey,
+    if (approverId) {
+      const result = await prisma.approverAssignment.delete({
+        where: {
+          company_code_section_key_item_key_approver_id: {
+            company_code: companyCode,
+            section_key: sectionKey,
+            item_key: itemKey,
+            approver_id: approverId,
+          },
         },
-      },
-      select: { approver_id: true },
-    })
-
-    // Delete the assignment
-    const result = await prisma.approverAssignment.delete({
-      where: {
-        company_code_section_key_item_key: {
-          company_code: companyCode,
-          section_key: sectionKey,
-          item_key: itemKey,
-        },
-      },
-    })
-
-    // Revoke the role if they're no longer assigned to any items in this section
-    if (assignment?.approver_id) {
-      await revokeApproverRoleIfNotAssigned(assignment.approver_id, companyCode, sectionKey)
+      })
+      await revokeApproverRoleIfNotAssigned(approverId, companyCode, sectionKey)
+      return result
+    } else {
+      const assignments = await prisma.approverAssignment.findMany({
+        where: { company_code: companyCode, section_key: sectionKey, item_key: itemKey },
+        select: { approver_id: true },
+      })
+      await prisma.approverAssignment.deleteMany({
+        where: { company_code: companyCode, section_key: sectionKey, item_key: itemKey },
+      })
+      await Promise.all(
+        assignments.map((a) =>
+          revokeApproverRoleIfNotAssigned(a.approver_id, companyCode, sectionKey)
+        )
+      )
+      return null
     }
-
-    return result
   } catch {
     return null
   }

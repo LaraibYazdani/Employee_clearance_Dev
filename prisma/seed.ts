@@ -1687,9 +1687,14 @@ export async function runSeed(): Promise<void> {
       for (const itemKey of itemKeys) {
         await prisma.approverAssignment.upsert({
           where: {
-            company_code_section_key_item_key: { company_code: companyCode, section_key: sectionKey, item_key: itemKey },
+            company_code_section_key_item_key_approver_id: {
+              company_code: companyCode,
+              section_key: sectionKey,
+              item_key: itemKey,
+              approver_id: defaultApprover.id,
+            },
           },
-          update: { approver_id: defaultApprover.id },
+          update: {},
           create: {
             company_code: companyCode,
             section_key: sectionKey,
