@@ -14,6 +14,7 @@ const SECTION_TO_ROLE: Record<string, string> = {
   HR_DEPT:          'DEPT_APPROVER_HR',
   FINANCE:          'DEPT_APPROVER_FINANCE',
   PAYROLL_MANAGER:  'PAYROLL_MANAGER',
+  FINANCE_MANAGER:  'FINANCE_MANAGER',
 }
 
 /** Returns the role for a section, generating one dynamically for custom keys. */

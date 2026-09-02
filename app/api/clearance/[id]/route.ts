@@ -91,8 +91,14 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
     )
     const isPayrollManager = user.roles.includes('PAYROLL_MANAGER') || !!payrollAssignment
 
+    // Finance Manager check — view-only access to all clearances for their company
+    const financeManagerAssignment = allAssignments.find(
+      (a) => a.section_key === 'FINANCE_MANAGER' && a.approver_id === user.id
+    )
+    const isFinanceManager = user.roles.includes('FINANCE_MANAGER') && !!financeManagerAssignment
+
     // Access control — any of: super admin, initiating HRBP, subject employee,
-    // assigned approver in ApproverAssignment, line manager, DEPT_APPROVER role, or payroll manager
+    // assigned approver in ApproverAssignment, line manager, DEPT_APPROVER role, payroll manager, or finance manager
     const isAssignedApprover = allAssignments.some((a) => a.approver_id === user.id)
     // Check both live line_manager_id and stored section.approver_id for DEPT_HEAD/LINE_MANAGER
     // This handles: line manager changed after creation, employee re-imported with new DB id, etc.
@@ -105,7 +111,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       )
     const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
 
-    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedApprover && !isLineManager && !isDeptApprover && !isPayrollManager) {
+    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedApprover && !isLineManager && !isDeptApprover && !isPayrollManager && !isFinanceManager) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -221,7 +227,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
     })
 
     // Determine which users can see deductible fields
-    const canSeeDeductibles = isSuperAdmin || isOwnerHRBP || isSubjectEmployee || isPayrollManager
+    const canSeeDeductibles = isSuperAdmin || isOwnerHRBP || isSubjectEmployee || isPayrollManager || isFinanceManager
 
     // For each section's items, tag whether the current user can see/edit deductibles
     const sectionsWithDeductibleFlags = sections.map((s) => ({

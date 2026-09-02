@@ -90,7 +90,10 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
   const payrollManager =
     assignments.find((a) => a.section_key === 'PAYROLL_MANAGER') ?? null
 
-  return NextResponse.json({ company_code: companyCode, sections, payrollManager })
+  const financeManager =
+    assignments.find((a) => a.section_key === 'FINANCE_MANAGER') ?? null
+
+  return NextResponse.json({ company_code: companyCode, sections, payrollManager, financeManager })
 })
 
 // POST /api/admin/approvers — add one assignment (idempotent)

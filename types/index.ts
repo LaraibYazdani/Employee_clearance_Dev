@@ -115,5 +115,6 @@ export type PortalRole =
   | 'DEPT_APPROVER_HR'
   | 'DEPT_APPROVER_FINANCE'
   | 'PAYROLL_MANAGER'
+  | 'FINANCE_MANAGER'
   | 'EMPLOYEE'
   | 'SUPER_ADMIN'

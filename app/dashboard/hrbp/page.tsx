@@ -78,12 +78,14 @@ export default function HRBPDashboard() {
   const router = useRouter()
   const { user, token, isLoading } = useAuth()
 
-  // Role guard — only HRBP and SUPER_ADMIN may use this page
+  // Role guard — only HRBP, FINANCE_MANAGER, and SUPER_ADMIN may use this page
   useEffect(() => {
     if (isLoading) return
     if (!user) { router.replace('/login'); return }
     if (user.roles.includes('SUPER_ADMIN')) { router.replace('/admin'); return }
-    if (!user.roles.includes('HRBP')) { router.replace('/clearance'); return }
+    if (!user.roles.includes('HRBP') && !user.roles.includes('FINANCE_MANAGER')) {
+      router.replace('/clearance')
+    }
   }, [user, isLoading, router])
 
   const [stats, setStats] = useState<DashboardStats | null>(null)

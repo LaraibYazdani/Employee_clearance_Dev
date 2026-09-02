@@ -122,6 +122,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
     const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
     const isLineManager = user.roles.includes('LINE_MANAGER')
     const isPayrollManager = user.roles.includes('PAYROLL_MANAGER')
+    const isFinanceManager = user.roles.includes('FINANCE_MANAGER')
     let assignedSectionKeys = new Set<string>()
 
     if (user.roles.includes('SUPER_ADMIN')) {
@@ -142,6 +143,18 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
           : []),
       ]
       where.status = { in: ['PENDING_PAYROLL', 'COMPLETED'] }
+    } else if (isFinanceManager) {
+      // Finance Manager has view-only access to all clearances for their assigned company
+      const fmAssignments = await prisma.approverAssignment.findMany({
+        where: { approver_id: user.id, section_key: 'FINANCE_MANAGER' },
+        select: { company_code: true },
+        distinct: ['company_code'],
+      })
+      const fmCompanyCodes = fmAssignments.map((a) => a.company_code)
+      if (fmCompanyCodes.length > 0) {
+        where.employee = { company_code: { in: fmCompanyCodes } }
+      }
+      // No status filter — Finance Manager sees all statuses
     } else if (isDeptApprover || isLineManager) {
       // For dept approvers: also scope by company code assignments
       if (isDeptApprover) {

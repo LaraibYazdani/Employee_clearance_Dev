@@ -66,6 +66,7 @@ export default function ApproverManagementPage() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
   const [payrollManager, setPayrollManager] = useState<Assignment | null>(null)
+  const [financeManager, setFinanceManager] = useState<Assignment | null>(null)
 
   // Payroll manager assignment state
   const [pmEditing, setPmEditing] = useState(false)
@@ -76,6 +77,16 @@ export default function ApproverManagementPage() {
   const [pmImporting, setPmImporting] = useState(false)
   const [pmSaving, setPmSaving] = useState(false)
   const [pmError, setPmError] = useState<string | null>(null)
+
+  // Finance manager assignment state
+  const [fmEditing, setFmEditing] = useState(false)
+  const [fmQuery, setFmQuery] = useState('')
+  const [fmDbResults, setFmDbResults] = useState<UserSearchResult[]>([])
+  const [fmSfResults, setFmSfResults] = useState<SFImportResult[]>([])
+  const [fmSfLoading, setFmSfLoading] = useState(false)
+  const [fmImporting, setFmImporting] = useState(false)
+  const [fmSaving, setFmSaving] = useState(false)
+  const [fmError, setFmError] = useState<string | null>(null)
 
   // User search state per cell
   const [searchQuery, setSearchQuery] = useState<Record<string, string>>({})
@@ -114,6 +125,7 @@ export default function ApproverManagementPage() {
         const data = await res.json()
         setSections(data.sections ?? [])
         setPayrollManager(data.payrollManager ?? null)
+        setFinanceManager(data.financeManager ?? null)
       }
     } finally {
       setLoading(false)
@@ -419,6 +431,97 @@ export default function ApproverManagementPage() {
     } catch { /* ignore */ }
   }
 
+  const searchFmUsers = async (query: string) => {
+    setFmQuery(query)
+    if (!query.trim() || query.length < 2) { setFmDbResults([]); setFmSfResults([]); return }
+    try {
+      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) setFmDbResults((await res.json()).slice(0, 8))
+    } catch { /* ignore */ }
+  }
+
+  const searchFmSF = async () => {
+    if (!fmQuery.trim() || fmQuery.length < 2) return
+    setFmSfLoading(true)
+    try {
+      const res = await fetch(`/api/admin/sf-import?q=${encodeURIComponent(fmQuery)}`, {
+        headers: authHeaders(),
+      })
+      if (res.ok) setFmSfResults((await res.json()).slice(0, 8))
+    } catch { /* ignore */ }
+    finally { setFmSfLoading(false) }
+  }
+
+  const assignFinanceManager = async (approver: UserSearchResult) => {
+    setFmSaving(true)
+    setFmError(null)
+    try {
+      const res = await fetch('/api/admin/approvers', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          company_code: selectedCompany,
+          section_key: 'FINANCE_MANAGER',
+          item_key: 'section',
+          approver_id: approver.id,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setFmError(data.message ?? 'Assignment failed')
+        return
+      }
+      setFmEditing(false)
+      setFmQuery('')
+      setFmDbResults([])
+      setFmSfResults([])
+      await fetchMatrix()
+    } finally {
+      setFmSaving(false)
+    }
+  }
+
+  const importAndAssignFm = async (sfUser: SFImportResult) => {
+    setFmImporting(true)
+    setFmError(null)
+    try {
+      let dbId = sfUser.dbId
+      if (!sfUser.inDb) {
+        const res = await fetch('/api/admin/sf-import', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ sf_user_id: sfUser.sf_employee_id }),
+        })
+        if (!res.ok) {
+          const data = await res.json()
+          setFmError(data.error ?? 'Import failed')
+          return
+        }
+        dbId = (await res.json()).user.id
+      }
+      await assignFinanceManager({ id: dbId!, full_name: sfUser.full_name, email: sfUser.email, designation: sfUser.designation })
+    } finally {
+      setFmImporting(false)
+    }
+  }
+
+  const removeFinanceManager = async () => {
+    try {
+      await fetch('/api/admin/approvers', {
+        method: 'DELETE',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          company_code: selectedCompany,
+          section_key: 'FINANCE_MANAGER',
+          item_key: 'section',
+        }),
+      })
+      await fetchMatrix()
+    } catch { /* ignore */ }
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -587,6 +690,125 @@ export default function ApproverManagementPage() {
               </div>
             ) : (
               <p className="text-sm text-gray-400 italic">No payroll manager assigned for this company.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Finance Manager card */}
+        <div className="bg-white rounded-xl border border-teal-200 shadow-sm">
+          <div className="flex items-center justify-between px-5 py-3 bg-teal-50 border-b border-teal-100">
+            <div>
+              <h3 className="text-sm font-semibold text-teal-900">Finance Manager</h3>
+              <p className="text-xs text-teal-600 mt-0.5">View-only access to all clearances for this company</p>
+            </div>
+            {!fmEditing && (
+              <button
+                onClick={() => { setFmEditing(true); setFmQuery(''); setFmDbResults([]); setFmSfResults([]); setFmError(null) }}
+                className="text-xs text-teal-600 hover:text-teal-800 font-medium px-3 py-1 rounded-lg border border-teal-200 hover:bg-teal-100 transition-colors"
+              >
+                {financeManager ? 'Change' : 'Assign'}
+              </button>
+            )}
+          </div>
+
+          <div className="px-5 py-4">
+            {fmError && (
+              <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <svg className="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {fmError}
+              </div>
+            )}
+
+            {fmEditing ? (
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="relative flex-1 min-w-64">
+                  <div className="flex gap-2">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={fmQuery}
+                      onChange={(e) => searchFmUsers(e.target.value)}
+                      placeholder="Search by name or ID..."
+                      className="flex-1 rounded-lg border border-teal-300 px-3 py-1.5 text-sm focus:ring-2 focus:ring-teal-200 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={searchFmSF}
+                      disabled={fmSfLoading || fmQuery.length < 2}
+                      className="text-xs text-teal-600 hover:text-teal-800 px-2 py-1.5 rounded border border-teal-200 hover:bg-teal-50 transition-colors disabled:opacity-40 whitespace-nowrap"
+                    >
+                      {fmSfLoading ? 'Searching…' : 'Search SF'}
+                    </button>
+                    <button
+                      onClick={() => { setFmEditing(false); setFmError(null) }}
+                      className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5 rounded border border-gray-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+
+                  {(fmDbResults.length > 0 || fmSfResults.length > 0) && (
+                    <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+                      {fmDbResults.map((u) => (
+                        <button
+                          key={u.id}
+                          onClick={() => assignFinanceManager(u)}
+                          disabled={fmSaving}
+                          className="w-full text-left px-3 py-2 hover:bg-teal-50 text-sm"
+                        >
+                          <span className="font-medium text-gray-800">{u.full_name}</span>
+                          <span className="text-gray-400 ml-2 text-xs">{u.designation}</span>
+                        </button>
+                      ))}
+                      {fmSfResults.length > 0 && (
+                        <>
+                          <div className="px-3 py-1.5 text-xs font-semibold text-teal-600 bg-teal-50 border-t border-teal-100">
+                            SuccessFactors Results
+                          </div>
+                          {fmSfResults.map((u) => (
+                            <button
+                              key={u.sf_employee_id}
+                              onClick={() => importAndAssignFm(u)}
+                              disabled={fmSaving || fmImporting}
+                              className="w-full text-left px-3 py-2 hover:bg-teal-50 text-sm flex items-center justify-between"
+                            >
+                              <span>
+                                <span className="font-medium text-gray-800">{u.full_name}</span>
+                                <span className="text-gray-400 ml-2 text-xs">{u.designation}</span>
+                              </span>
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${u.inDb ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {u.inDb ? 'Assign' : 'Import & Assign'}
+                              </span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : financeManager ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0">
+                    {financeManager.approver.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{financeManager.approver.full_name}</p>
+                    <p className="text-xs text-gray-400">{financeManager.approver.designation} &bull; {financeManager.approver.email}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={removeFinanceManager}
+                  className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">No finance manager assigned for this company.</p>
             )}
           </div>
         </div>
