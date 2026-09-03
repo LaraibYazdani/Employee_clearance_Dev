@@ -225,7 +225,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
         const itemLevelIds = Array.from(sectionItems.entries())
           .filter(([key]) => key !== 'section')
           .flatMap(([, ids]) => ids)
-        const uniqueItemLevelIds = [...new Set(itemLevelIds)]
+        const uniqueItemLevelIds = Array.from(new Set(itemLevelIds))
         if (uniqueItemLevelIds.length > 0) {
           displayApprovers = uniqueItemLevelIds
             .map((id) => ({ id, name: approverNameMap.get(id) ?? '' }))
