@@ -83,12 +83,24 @@ export default function ApproverDashboard() {
     fetchClearances()
   }, [fetchClearances])
 
-  const pending = clearances.filter(
-    (c) => c.status !== 'COMPLETED' && c.status !== 'CANCELLED'
-  )
-  const completed = clearances.filter(
-    (c) => c.status === 'COMPLETED' || c.status === 'CANCELLED'
-  )
+  const pending = clearances.filter((c) => {
+    const secStatus = getSectionStatus(c)
+    // Show in pending if my section still needs action
+    if (secStatus === 'PENDING') return true
+    // If no tagged section found, fall back to overall clearance status
+    if (secStatus === null) return c.status !== 'COMPLETED' && c.status !== 'CANCELLED'
+    return false
+  })
+  const completed = clearances.filter((c) => {
+    const secStatus = getSectionStatus(c)
+    // My section is done (approved or denied), or whole clearance is finished
+    return (
+      secStatus === 'APPROVED' ||
+      secStatus === 'DENIED' ||
+      c.status === 'COMPLETED' ||
+      c.status === 'CANCELLED'
+    )
+  })
 
   const displayList = activeTab === 'pending' ? pending : completed
 

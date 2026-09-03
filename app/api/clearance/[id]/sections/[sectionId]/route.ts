@@ -211,17 +211,20 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         )
       }
 
-      // All items must be APPROVED/NA before the section can be approved
+      // Check whether all items in the section are now APPROVED/NA
       const allItems = await prisma.clearanceItem.findMany({
         where: { clearance_section_id: sectionId },
         select: { status: true },
       })
       const allApproved = allItems.every((item) => item.status === 'APPROVED' || item.status === 'NA')
       if (!allApproved) {
-        return NextResponse.json(
-          { error: 'Cannot approve section', message: 'All items must be approved before the section can be approved.' },
-          { status: 409 }
-        )
+        // In multi-approver sections, other approvers may still have outstanding items.
+        // The items submitted by this user have been saved — return current state as success.
+        const currentSection = await prisma.clearanceSection.findUnique({
+          where: { id: sectionId },
+          include: { clearance_items: true },
+        })
+        return NextResponse.json(currentSection)
       }
 
       await prisma.clearanceSection.update({

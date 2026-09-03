@@ -156,7 +156,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       }
       // No status filter — Finance Manager sees all statuses
     } else if (isDeptApprover || isLineManager) {
-      // For dept approvers: also scope by company code assignments
+      // For dept approvers: scope by DB assignments AND role-derived section keys (for role-based sections)
       if (isDeptApprover) {
         const liveAssignments = await prisma.approverAssignment.findMany({
           where: { approver_id: user.id },
@@ -164,9 +164,23 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
         })
         const uniqueCompanies = Array.from(new Set(liveAssignments.map((a) => a.company_code)))
         assignedSectionKeys = new Set(liveAssignments.map((a) => a.section_key))
+
+        // Also derive section keys from the user's DEPT_APPROVER_* roles themselves
+        // so role-based sections (no DB assignment) still appear on the dashboard
+        const roleDerivedSectionKeys = user.roles
+          .filter((r) => r.startsWith('DEPT_APPROVER_'))
+          .map((r) => r.replace('DEPT_APPROVER_', ''))
+        for (const key of roleDerivedSectionKeys) assignedSectionKeys.add(key)
+
         const orConditions: any[] = []
         if (uniqueCompanies.length > 0) {
           orConditions.push({ employee: { company_code: { in: uniqueCompanies } } })
+        }
+        // Role-based: clearances that have a section matching one of their role-derived keys
+        if (roleDerivedSectionKeys.length > 0) {
+          orConditions.push({
+            clearance_sections: { some: { section_key: { in: roleDerivedSectionKeys } } },
+          })
         }
         orConditions.push({ employee: { line_manager_id: user.id } })
         orConditions.push({ clearance_sections: { some: { approver_id: user.id } } })
@@ -220,6 +234,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       sections: c.clearance_sections.map((s) => ({
         ...s,
         items: s.clearance_items,
+        // is_my_section: stored approver match, live assignment, or role-derived section key
         is_my_section: s.approver_id === user.id || assignedSectionKeys.has(s.section_key),
       })),
     }))

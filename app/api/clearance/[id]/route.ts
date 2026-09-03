@@ -156,13 +156,10 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
           displayApproverName = s.approver_name
         }
       } else if (sectionLevelApproverIds.length > 0) {
-        if (s.status !== 'PENDING') {
-          displayApproverId = s.approver_id
-          displayApproverName = s.approver_name
-        } else {
-          displayApproverId = sectionLevelApproverIds[0]
-          displayApproverName = approverNameMap.get(sectionLevelApproverIds[0]) ?? null
-        }
+        // Always show the snapshotted approver — whoever was assigned at initiation.
+        // This keeps display consistent with who the clearance is actually waiting on.
+        displayApproverId = s.approver_id
+        displayApproverName = s.approver_name
       }
 
       // Enhance items with live assignment info (multi-approver)
