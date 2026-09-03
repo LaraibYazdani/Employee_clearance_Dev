@@ -127,7 +127,8 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
 
     if (user.roles.includes('SUPER_ADMIN')) {
       // No additional filter — see all
-    } else if (user.roles.includes('HRBP')) {
+    } else if (user.roles.includes('HRBP') && !isDeptApprover && !isLineManager) {
+      // Pure HRBP (no dept approver role) — only see clearances they initiated
       where.initiated_by_hrbp_id = user.id
     } else if (isPayrollManager) {
       // Payroll manager sees clearances pending their sign-off for companies they're assigned to
@@ -184,6 +185,10 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
         }
         orConditions.push({ employee: { line_manager_id: user.id } })
         orConditions.push({ clearance_sections: { some: { approver_id: user.id } } })
+        // If this user is also an HRBP, include clearances they initiated
+        if (user.roles.includes('HRBP')) {
+          orConditions.push({ initiated_by_hrbp_id: user.id })
+        }
         where.OR = orConditions
       } else {
         // Pure line manager — only see clearances where they are the line manager
