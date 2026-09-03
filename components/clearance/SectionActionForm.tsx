@@ -259,11 +259,14 @@ export default function SectionActionForm({
     if (user.roles.includes('HRBP')) return items
     // For read-only views, show everything
     if (isReadOnly) return items
-    const hasItemLevelAssignments = items.some((item) => item.assigned_approvers?.length)
+    const hasItemLevelAssignments = items.some(
+      (item) => (item.assigned_approvers?.length ?? 0) > 0
+    )
     if (!hasItemLevelAssignments) return items
-    // Active pending section: only show items assigned to this user (any one of the
-    // OR-eligible approvers on that item)
-    return items.filter((item) => item.assigned_approvers?.some((a) => a.id === user.id))
+    // Active pending section: only show items assigned to this user
+    return items.filter((item) =>
+      item.assigned_approvers?.some((a) => a.id === user.id)
+    )
   }, [items, user, isReadOnly])
 
   const updateItemComments = (id: string, comments: string) => {
@@ -338,10 +341,13 @@ export default function SectionActionForm({
     if (isCompleted) return false
     if (!user) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
-    // Any of the OR-eligible assigned approvers can edit
-    if (item.assigned_approvers?.some((a) => a.id === user.id)) return true
+    // Any of the assigned approvers can edit
+    if (
+      (item.assigned_approvers?.length ?? 0) > 0 &&
+      item.assigned_approvers!.some((a) => a.id === user.id)
+    ) return true
     // No item-level assignment: section-level approver owns all items
-    if (!item.assigned_approvers?.length && section.approver_id === user.id) return true
+    if (!(item.assigned_approvers?.length) && section.approver_id === user.id) return true
     return false
   }
 
@@ -399,7 +405,7 @@ export default function SectionActionForm({
     }
   }
 
-  const hasItemAssignments = items.some((i) => i.assigned_approvers?.length)
+  const hasItemAssignments = items.some((i) => (i.assigned_approvers?.length ?? 0) > 0)
   // Show deductible columns: controlled by parent (based on role) or if item has show_deductibles flag
   const showDeductibleCol = showDeductibles || items.some((i) => i.show_deductibles)
 
@@ -434,28 +440,22 @@ export default function SectionActionForm({
         </div>
       )}
 
-      {/* Assigned approver info — shows every OR-eligible approver, not just one */}
-      {!isReadOnly && (section.assigned_approvers?.length || section.approver_name) && (
-        <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100 flex-wrap">
-          <svg className="w-4 h-4 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          {section.assigned_approvers?.length ? (
-            <>
-              {section.assigned_approvers.length > 1 ? 'Assigned to any of' : 'Assigned to'}
-              {section.assigned_approvers.map((a) => (
-                <span key={a.id} className="font-medium text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5">
-                  {a.name}
-                </span>
-              ))}
-            </>
-          ) : (
-            <>
-              Assigned to <span className="font-medium text-gray-700">{section.approver_name}</span>
-            </>
-          )}
-        </div>
-      )}
+      {/* Assigned approver info */}
+      {(() => {
+        const displayApprovers = (section as any).display_approvers as { id: string; name: string }[] | undefined
+        const names = displayApprovers && displayApprovers.length > 0
+          ? displayApprovers.map((a) => a.name).join(', ')
+          : section.approver_name
+        if (!names || isReadOnly) return null
+        return (
+          <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+            <svg className="w-4 h-4 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            Assigned to <span className="font-medium text-gray-700">{names}</span>
+          </div>
+        )
+      })()}
 
       {/* Items table */}
       {visibleItems.length > 0 ? (
@@ -605,17 +605,9 @@ export default function SectionActionForm({
                       {/* Assigned to */}
                       {hasItemAssignments && (
                         <td className="px-3 py-2.5 text-xs text-gray-600 align-middle">
-                          {item.status === 'APPROVED' || item.status === 'NA' ? (
-                            item.approver_name ? (
-                              <span className="inline-block px-2 py-0.5 bg-green-50 text-green-700 rounded-full border border-green-200 truncate max-w-[110px]" title={`Approved by ${item.approver_name}`}>
-                                ✓ {item.approver_name.split(' ')[0]}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 italic">—</span>
-                            )
-                          ) : item.assigned_approvers?.length ? (
+                          {(item.assigned_approvers?.length ?? 0) > 0 ? (
                             <div className="flex flex-wrap gap-1">
-                              {item.assigned_approvers.map((a) => (
+                              {item.assigned_approvers!.map((a) => (
                                 <span
                                   key={a.id}
                                   className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full border border-blue-200 truncate max-w-[80px]"
@@ -661,7 +653,7 @@ export default function SectionActionForm({
         </div>
       ) : (
         <p className="text-sm text-gray-400 italic">
-          {items.some((item) => item.assigned_approvers?.length)
+          {items.some((item) => (item.assigned_approvers?.length ?? 0) > 0)
             ? 'No checklist items assigned to you for this section.'
             : 'No checklist items for this section.'}
         </p>

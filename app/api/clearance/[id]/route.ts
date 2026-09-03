@@ -75,15 +75,14 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       select: { section_key: true, item_key: true, approver_id: true },
     })
 
-    // Build section_key → Map<item_key, approver_id[]> — an item can now have multiple
-    // OR-eligible approvers, so each item_key maps to an array rather than a single id.
+    // Build section_key → Map<item_key, approver_id[]>
     const assignmentMap = new Map<string, Map<string, string[]>>()
     for (const a of allAssignments) {
       if (!assignmentMap.has(a.section_key)) assignmentMap.set(a.section_key, new Map())
-      const itemMap = assignmentMap.get(a.section_key)!
-      const arr = itemMap.get(a.item_key) ?? []
-      arr.push(a.approver_id)
-      itemMap.set(a.item_key, arr)
+      const sectionMap = assignmentMap.get(a.section_key)!
+      const existing = sectionMap.get(a.item_key) ?? []
+      existing.push(a.approver_id)
+      sectionMap.set(a.item_key, existing)
     }
 
     // Payroll manager check
@@ -92,8 +91,14 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
     )
     const isPayrollManager = user.roles.includes('PAYROLL_MANAGER') || !!payrollAssignment
 
+    // Finance Manager check — view-only access to all clearances for their company
+    const financeManagerAssignment = allAssignments.find(
+      (a) => a.section_key === 'FINANCE_MANAGER' && a.approver_id === user.id
+    )
+    const isFinanceManager = user.roles.includes('FINANCE_MANAGER') && !!financeManagerAssignment
+
     // Access control — any of: super admin, initiating HRBP, subject employee,
-    // assigned approver in ApproverAssignment, line manager, DEPT_APPROVER role, or payroll manager
+    // assigned approver in ApproverAssignment, line manager, DEPT_APPROVER role, payroll manager, or finance manager
     const isAssignedApprover = allAssignments.some((a) => a.approver_id === user.id)
     // Check both live line_manager_id and stored section.approver_id for DEPT_HEAD/LINE_MANAGER
     // This handles: line manager changed after creation, employee re-imported with new DB id, etc.
@@ -106,7 +111,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       )
     const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
 
-    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedApprover && !isLineManager && !isDeptApprover && !isPayrollManager) {
+    if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isAssignedApprover && !isLineManager && !isDeptApprover && !isPayrollManager && !isFinanceManager) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -139,34 +144,37 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       const sectionItems = assignmentMap.get(s.section_key) ?? new Map<string, string[]>()
       const sectionLevelApproverIds = sectionItems.get('section') ?? []
 
-      const namesFor = (ids: string[]): { id: string; name: string }[] =>
-        ids.map((id) => ({ id, name: approverNameMap.get(id) ?? 'Unknown' }))
-
-      // Section-level display approvers (shown in summary panel / section header).
-      // Once decided, this is always the single person who actually acted; while
-      // still pending, it's every OR-eligible approver.
-      let displayApprovers: { id: string; name: string }[] = []
+      // Section-level display approver (shown in summary panel / section header)
+      let displayApproverId: string | null = null
+      let displayApproverName: string | null = null
       if (s.section_key === 'DEPT_HEAD' || s.section_key === 'LINE_MANAGER') {
         if (s.status === 'PENDING') {
-          displayApprovers = lineManagerId ? namesFor([lineManagerId]) : []
-        } else if (s.approver_id) {
-          displayApprovers = [{ id: s.approver_id, name: s.approver_name ?? 'Unknown' }]
+          displayApproverId = lineManagerId
+          displayApproverName = lineManagerId ? (approverNameMap.get(lineManagerId) ?? null) : null
+        } else {
+          displayApproverId = s.approver_id
+          displayApproverName = s.approver_name
         }
       } else if (sectionLevelApproverIds.length > 0) {
-        displayApprovers =
-          s.status !== 'PENDING' && s.approver_id
-            ? [{ id: s.approver_id, name: s.approver_name ?? 'Unknown' }]
-            : namesFor(sectionLevelApproverIds)
+        displayApproverId = s.approver_id
+        displayApproverName = s.approver_name
       }
 
-      // Enhance items with live assignment info (multiple OR-eligible approvers per item)
+      // Enhance items with live assignment info (multi-approver)
       const items = s.clearance_items.map((item) => {
-        const assignedApproverIds = sectionLevelApproverIds.length > 0
-          ? sectionLevelApproverIds
-          : (sectionItems.get(item.item_key) ?? [])
+        const rawApproverIds =
+          sectionLevelApproverIds.length > 0
+            ? sectionLevelApproverIds
+            : (sectionItems.get(item.item_key) ?? [])
+        const assignedApprovers = rawApproverIds
+          .map((id) => ({ id, name: approverNameMap.get(id) ?? '' }))
+          .filter((a) => a.name)
         return {
           ...item,
-          assigned_approvers: namesFor(assignedApproverIds),
+          assigned_approvers: assignedApprovers,
+          // Keep first-approver fields for backward compat with any legacy references
+          assigned_approver_id: assignedApprovers[0]?.id ?? undefined,
+          assigned_approver_name: assignedApprovers[0]?.name ?? undefined,
         }
       })
 
@@ -175,20 +183,16 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
         if (s.status === 'LOCKED' || s.status !== 'PENDING') return false
         if (isSuperAdmin) return true
 
-        // DEPT_HEAD and LINE_MANAGER: check both live line_manager_id and stored approver_id
-        // Covers cases where line manager changed after creation or employee was re-imported
         if (s.section_key === 'DEPT_HEAD' || s.section_key === 'LINE_MANAGER') {
           return lineManagerId === user.id || s.approver_id === user.id
         }
 
         if (sectionItems.size === 0) {
-          // No assignments configured → fall back to role-based check
           const requiredRole = SECTION_ROLE_MAP[s.section_key]
           return requiredRole ? user.roles.includes(requiredRole) : false
         }
 
         if (sectionLevelApproverIds.length > 0) {
-          // Section-level assignment: any of the OR-eligible approvers can approve the whole section
           return sectionLevelApproverIds.includes(user.id)
         }
 
@@ -207,26 +211,55 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
           ? 'Department Head'
           : (sectionLabelMap.get(s.section_key) ?? undefined)
 
+      // Build display_approvers for the summary panel:
+      // - If section is already actioned: show who approved/denied (snapshot)
+      // - If pending with item-level assignments: show all unique item-level approvers
+      // - If pending with only section-level: show the snapshot
+      let displayApprovers: { id: string; name: string }[] = []
+      if (s.status !== 'PENDING') {
+        if (s.approver_id && s.approver_name) {
+          displayApprovers = [{ id: s.approver_id, name: s.approver_name }]
+        }
+      } else {
+        // Collect all item-level (non-section) approver IDs
+        const itemLevelIds = Array.from(sectionItems.entries())
+          .filter(([key]) => key !== 'section')
+          .flatMap(([, ids]) => ids)
+        const uniqueItemLevelIds = Array.from(new Set(itemLevelIds))
+        if (uniqueItemLevelIds.length > 0) {
+          displayApprovers = uniqueItemLevelIds
+            .map((id) => ({ id, name: approverNameMap.get(id) ?? '' }))
+            .filter((a) => a.name)
+        } else if (displayApproverId) {
+          displayApprovers = [{ id: displayApproverId, name: displayApproverName ?? '' }]
+        }
+      }
+
       return {
         ...s,
         label: resolvedLabel,
-        approver_id: displayApprovers[0]?.id ?? s.approver_id,
-        approver_name: displayApprovers.map((a) => a.name).join(', ') || s.approver_name,
-        assigned_approvers: displayApprovers,
+        approver_id: displayApproverId ?? s.approver_id,
+        approver_name: displayApproverName ?? s.approver_name,
+        display_approvers: displayApprovers,
         items,
         can_act: canAct(),
       }
     })
 
     // Determine which users can see deductible fields
-    const canSeeDeductibles = isSuperAdmin || isOwnerHRBP || isSubjectEmployee || isPayrollManager
+    const canSeeDeductibles = isSuperAdmin || isOwnerHRBP || isSubjectEmployee || isPayrollManager || isFinanceManager
 
     // For each section's items, tag whether the current user can see/edit deductibles
     const sectionsWithDeductibleFlags = sections.map((s) => ({
       ...s,
       items: s.items.map((item: any) => ({
         ...item,
-        show_deductibles: canSeeDeductibles || item.assigned_approvers?.some((a: any) => a.id === user.id),
+        show_deductibles:
+          canSeeDeductibles ||
+          (item.assigned_approvers as { id: string; name: string }[])?.some(
+            (a) => a.id === user.id
+          ) ||
+          false,
       })),
     }))
 

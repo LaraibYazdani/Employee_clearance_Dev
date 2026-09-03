@@ -49,7 +49,7 @@ export default function ApproverDashboard() {
   // Role guard — redirect users without any DEPT_APPROVER_* role
   useEffect(() => {
     if (isLoading) return
-    if (!user || !user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))) {
+    if (!user || (!user.roles.some((r) => r.startsWith('DEPT_APPROVER_')) && !user.roles.includes('LINE_MANAGER'))) {
       router.replace('/clearance')
     }
   }, [user, isLoading, router])
@@ -83,12 +83,24 @@ export default function ApproverDashboard() {
     fetchClearances()
   }, [fetchClearances])
 
-  const pending = clearances.filter(
-    (c) => c.status !== 'COMPLETED' && c.status !== 'CANCELLED'
-  )
-  const completed = clearances.filter(
-    (c) => c.status === 'COMPLETED' || c.status === 'CANCELLED'
-  )
+  const pending = clearances.filter((c) => {
+    const secStatus = getSectionStatus(c)
+    // Show in pending if my section still needs action
+    if (secStatus === 'PENDING') return true
+    // If no tagged section found, fall back to overall clearance status
+    if (secStatus === null) return c.status !== 'COMPLETED' && c.status !== 'CANCELLED'
+    return false
+  })
+  const completed = clearances.filter((c) => {
+    const secStatus = getSectionStatus(c)
+    // My section is done (approved or denied), or whole clearance is finished
+    return (
+      secStatus === 'APPROVED' ||
+      secStatus === 'DENIED' ||
+      c.status === 'COMPLETED' ||
+      c.status === 'CANCELLED'
+    )
+  })
 
   const displayList = activeTab === 'pending' ? pending : completed
 

@@ -79,21 +79,24 @@ export default function ApproverSummaryPanel({
                   <span className="text-sm font-medium text-gray-800 truncate block">
                     {section.label || getSectionLabel(section.section_key)}
                   </span>
-                  {section.status === 'PENDING' && section.assigned_approvers?.length ? (
-                    <span
-                      className="text-xs text-gray-500 truncate block mt-0.5"
-                      title={section.assigned_approvers.map((a) => a.name).join(', ')}
-                    >
-                      {section.assigned_approvers.length > 1 ? 'Approvers: ' : ''}
-                      {section.assigned_approvers.map((a) => a.name).join(', ')}
-                    </span>
-                  ) : (
-                    section.approver_name && (
-                      <span className="text-xs text-gray-500 truncate block mt-0.5">
-                        {section.approver_name}
-                      </span>
-                    )
-                  )}
+                  {(() => {
+                    const approvers = (section as any).display_approvers as { id: string; name: string }[] | undefined
+                    if (approvers && approvers.length > 0) {
+                      return (
+                        <span className="text-xs text-gray-500 block mt-0.5">
+                          {approvers.map((a) => a.name).join(', ')}
+                        </span>
+                      )
+                    }
+                    if (section.approver_name) {
+                      return (
+                        <span className="text-xs text-gray-500 truncate block mt-0.5">
+                          {section.approver_name}
+                        </span>
+                      )
+                    }
+                    return null
+                  })()}
                 </div>
                 <Badge status={section.status} />
               </div>
