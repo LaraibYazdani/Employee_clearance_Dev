@@ -156,8 +156,6 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
           displayApproverName = s.approver_name
         }
       } else if (sectionLevelApproverIds.length > 0) {
-        // Always show the snapshotted approver — whoever was assigned at initiation.
-        // This keeps display consistent with who the clearance is actually waiting on.
         displayApproverId = s.approver_id
         displayApproverName = s.approver_name
       }
@@ -213,11 +211,36 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
           ? 'Department Head'
           : (sectionLabelMap.get(s.section_key) ?? undefined)
 
+      // Build display_approvers for the summary panel:
+      // - If section is already actioned: show who approved/denied (snapshot)
+      // - If pending with item-level assignments: show all unique item-level approvers
+      // - If pending with only section-level: show the snapshot
+      let displayApprovers: { id: string; name: string }[] = []
+      if (s.status !== 'PENDING') {
+        if (s.approver_id && s.approver_name) {
+          displayApprovers = [{ id: s.approver_id, name: s.approver_name }]
+        }
+      } else {
+        // Collect all item-level (non-section) approver IDs
+        const itemLevelIds = Array.from(sectionItems.entries())
+          .filter(([key]) => key !== 'section')
+          .flatMap(([, ids]) => ids)
+        const uniqueItemLevelIds = [...new Set(itemLevelIds)]
+        if (uniqueItemLevelIds.length > 0) {
+          displayApprovers = uniqueItemLevelIds
+            .map((id) => ({ id, name: approverNameMap.get(id) ?? '' }))
+            .filter((a) => a.name)
+        } else if (displayApproverId) {
+          displayApprovers = [{ id: displayApproverId, name: displayApproverName ?? '' }]
+        }
+      }
+
       return {
         ...s,
         label: resolvedLabel,
         approver_id: displayApproverId ?? s.approver_id,
         approver_name: displayApproverName ?? s.approver_name,
+        display_approvers: displayApprovers,
         items,
         can_act: canAct(),
       }
