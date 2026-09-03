@@ -441,14 +441,21 @@ export default function SectionActionForm({
       )}
 
       {/* Assigned approver info */}
-      {section.approver_name && !isReadOnly && (
-        <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
-          <svg className="w-4 h-4 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          Assigned to <span className="font-medium text-gray-700">{section.approver_name}</span>
-        </div>
-      )}
+      {(() => {
+        const displayApprovers = (section as any).display_approvers as { id: string; name: string }[] | undefined
+        const names = displayApprovers && displayApprovers.length > 0
+          ? displayApprovers.map((a) => a.name).join(', ')
+          : section.approver_name
+        if (!names || isReadOnly) return null
+        return (
+          <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+            <svg className="w-4 h-4 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            Assigned to <span className="font-medium text-gray-700">{names}</span>
+          </div>
+        )
+      })()}
 
       {/* Items table */}
       {visibleItems.length > 0 ? (
