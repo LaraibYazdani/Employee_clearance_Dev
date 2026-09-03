@@ -7,6 +7,7 @@ import {
   getUserProfile,
   getEmpJob,
   getHRBP,
+  checkIsHRBP,
   COMPANY_CODE_MAP,
 } from '@/lib/successfactors'
 
@@ -205,6 +206,23 @@ export async function POST(req: NextRequest) {
         { error: 'Unauthorized', message: 'Authentication failed' },
         { status: 401 }
       )
+    }
+
+    // If authenticated via SF, check whether this user is an HRBP for any employee
+    // and auto-grant the HRBP role so they see the HRBP dashboard on first login.
+    if (sfAuthSuccess && dbUser.sf_employee_id) {
+      try {
+        const isHRBP = await checkIsHRBP(dbUser.sf_employee_id)
+        const currentRoles = Array.isArray(dbUser.roles) ? (dbUser.roles as string[]) : ['EMPLOYEE']
+        if (isHRBP && !currentRoles.includes('HRBP')) {
+          dbUser = await prisma.user.update({
+            where: { id: dbUser.id },
+            data: { roles: [...currentRoles, 'HRBP'] },
+          })
+        }
+      } catch (err) {
+        console.error('[login] HRBP role check error (non-critical):', err)
+      }
     }
 
     // Default role assignment if empty

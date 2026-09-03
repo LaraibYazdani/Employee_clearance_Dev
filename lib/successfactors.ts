@@ -444,6 +444,26 @@ export async function getHRBP(userId: string): Promise<{ hrbpId: string } | null
   return liveGetHRBP(userId)
 }
 
+/**
+ * Reverse HRBP lookup — returns true if the given SF user is an HRBP for any employee.
+ * Used at login to auto-grant the HRBP portal role.
+ */
+export async function checkIsHRBP(sfEmployeeId: string): Promise<boolean> {
+  if (isMock()) {
+    await mockDelay()
+    return MOCK_USERS.some((m) => m.hrbp_sf_id === sfEmployeeId)
+  }
+  try {
+    const path = `/odata/v2/EmpJobRelationships?$filter=relUserId eq '${sfEmployeeId}' and relationshipType eq '18570'&$top=1&$format=json&$select=userId`
+    const data = await sfGet(path)
+    const results = data?.d?.results ?? []
+    return results.length > 0
+  } catch (err) {
+    console.error('[SF] checkIsHRBP error:', err)
+    return false
+  }
+}
+
 export async function getLineManager(managerId: string): Promise<SFUserProfile | null> {
   if (isMock()) {
     await mockDelay()
