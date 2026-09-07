@@ -11,10 +11,10 @@ import { ClearanceRequest } from '@/types'
 import { formatDatePKT, daysUntil } from '@/lib/utils'
 
 interface DashboardStats {
-  active: number
-  pending_intervention: number
-  completed_this_month: number
-  total: number
+  activeClearances: number
+  pendingIntervention: number
+  completedThisMonth: number
+  totalClearances: number
 }
 
 function StatCard({
@@ -168,17 +168,17 @@ export default function HRBPDashboard() {
           ))
         ) : (
           <>
-            <StatCard label="Active Clearances" value={stats?.active ?? 0} />
+            <StatCard label="Active Clearances" value={stats?.activeClearances ?? 0} />
             <StatCard
               label="Pending Intervention"
-              value={stats?.pending_intervention ?? 0}
-              highlight={(stats?.pending_intervention ?? 0) > 0}
+              value={stats?.pendingIntervention ?? 0}
+              highlight={(stats?.pendingIntervention ?? 0) > 0}
             />
             <StatCard
               label="Completed This Month"
-              value={stats?.completed_this_month ?? 0}
+              value={stats?.completedThisMonth ?? 0}
             />
-            <StatCard label="Total" value={stats?.total ?? 0} />
+            <StatCard label="Total" value={stats?.totalClearances ?? 0} />
           </>
         )}
       </div>

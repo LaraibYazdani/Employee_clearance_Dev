@@ -22,10 +22,12 @@ export default function DashboardRedirect() {
       router.replace('/admin')
     } else if (roles.includes('HRBP')) {
       router.replace('/dashboard/hrbp')
-    } else if (roles.some((r) => r.startsWith('DEPT_APPROVER_'))) {
+    } else if (roles.includes('FINANCE_MANAGER')) {
+      router.replace('/dashboard/hrbp')
+    } else if (roles.some((r) => r.startsWith('DEPT_APPROVER_')) || roles.includes('LINE_MANAGER')) {
       router.replace('/dashboard/approver')
     } else {
-      router.replace('/dashboard/hrbp')
+      router.replace('/clearance')
     }
   }, [user, isLoading, isAuthenticated, router])
 

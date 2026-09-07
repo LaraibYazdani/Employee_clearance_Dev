@@ -10,8 +10,9 @@ import { IS_TEST_SERVER } from '@/lib/site-config'
 function getRoleRedirect(roles: string[]): string {
   if (roles.includes('SUPER_ADMIN')) return '/admin'
   if (roles.includes('HRBP')) return '/dashboard/hrbp'
-  if (roles.some((r) => r.startsWith('DEPT_APPROVER_'))) return '/dashboard/approver'
-  return '/dashboard/hrbp'
+  if (roles.includes('FINANCE_MANAGER')) return '/dashboard/hrbp'
+  if (roles.some((r) => r.startsWith('DEPT_APPROVER_')) || roles.includes('LINE_MANAGER')) return '/dashboard/approver'
+  return '/clearance'
 }
 
 export default function LoginPage() {
