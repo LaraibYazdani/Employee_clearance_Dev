@@ -189,7 +189,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       if (Array.isArray(body.items) && body.items.length > 0) {
         await Promise.all(
           body.items.map((item) => {
-            const allowedStatuses = ['APPROVED', 'NA', 'PENDING']
+            const allowedStatuses = ['APPROVED', 'NA', 'PENDING', 'HOLD']
             const status = item.status && allowedStatuses.includes(item.status) ? item.status : undefined
             return prisma.clearanceItem.updateMany({
               where: { id: item.id, clearance_section_id: sectionId },
@@ -202,7 +202,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
                 ...(item.deductible_amount !== undefined
                   ? { deductible_amount: item.deductible_amount !== null ? String(item.deductible_amount) : null }
                   : {}),
-                ...(status === 'APPROVED' || status === 'NA'
+                ...(status === 'APPROVED' || status === 'NA' || status === 'HOLD'
                   ? { approver_id: user.id, approver_name: user.full_name, decision_at: now }
                   : {}),
               },
@@ -211,12 +211,14 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         )
       }
 
-      // Check whether all items in the section are now APPROVED/NA
+      // Check whether all items in the section are now terminal (APPROVED / NA / HOLD)
       const allItems = await prisma.clearanceItem.findMany({
         where: { clearance_section_id: sectionId },
         select: { status: true },
       })
-      const allApproved = allItems.every((item) => item.status === 'APPROVED' || item.status === 'NA')
+      const allApproved = allItems.every(
+        (item) => item.status === 'APPROVED' || item.status === 'NA' || item.status === 'HOLD'
+      )
       if (!allApproved) {
         // In multi-approver sections, other approvers may still have outstanding items.
         // The items submitted by this user have been saved — return current state as success.
@@ -277,7 +279,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       if (Array.isArray(body.items) && body.items.length > 0) {
         await Promise.all(
           body.items.map((item) => {
-            const allowedStatuses = ['APPROVED', 'NA', 'PENDING']
+            const allowedStatuses = ['APPROVED', 'NA', 'PENDING', 'HOLD']
             const status = item.status && allowedStatuses.includes(item.status) ? item.status : undefined
             return prisma.clearanceItem.updateMany({
               where: { id: item.id, clearance_section_id: sectionId },

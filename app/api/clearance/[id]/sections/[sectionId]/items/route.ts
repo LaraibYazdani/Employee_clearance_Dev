@@ -13,7 +13,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
   let body: {
     items?: Array<{
       id: string
-      status?: 'APPROVED' | 'NA' | 'PENDING'
+      status?: 'APPROVED' | 'NA' | 'PENDING' | 'HOLD'
       comments?: string
     }>
   }
@@ -28,7 +28,7 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
     return NextResponse.json({ error: 'items array is required and must not be empty' }, { status: 400 })
   }
 
-  const allowedStatuses = ['APPROVED', 'NA', 'PENDING']
+  const allowedStatuses = ['APPROVED', 'NA', 'PENDING', 'HOLD']
   for (const item of body.items) {
     if (!item.id) {
       return NextResponse.json({ error: 'Each item must have an id' }, { status: 400 })

@@ -34,6 +34,7 @@ const statusStyles: Record<string, string> = {
   LOCKED: 'bg-gray-100 text-gray-600 border-gray-200',
   DRAFT: 'bg-gray-100 text-gray-600 border-gray-200',
   FLAGGED: 'bg-red-100 text-red-800 border-red-200',
+  HOLD: 'bg-amber-100 text-amber-800 border-amber-200',
 }
 
 const statusLabels: Record<string, string> = {
@@ -49,6 +50,7 @@ const statusLabels: Record<string, string> = {
   LOCKED: 'Locked',
   DRAFT: 'Draft',
   FLAGGED: 'Flagged',
+  HOLD: 'On Hold',
 }
 
 export default function Badge({ status, className = '' }: BadgeProps) {

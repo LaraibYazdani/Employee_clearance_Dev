@@ -11,6 +11,7 @@ interface ItemRow extends ClearanceItem {
   localDeductibleDescription: string
   localDeductibleAmount: string
   localAttachments: ClearanceItemAttachment[]
+  originalComments: string
 }
 
 interface SectionActionFormProps {
@@ -232,13 +233,14 @@ export default function SectionActionForm({
     (section.items ?? []).map((item) => ({
       ...item,
       localComments: item.comments ?? '',
+      originalComments: item.comments ?? '',
       localDeductibleDescription: item.deductible_description ?? '',
       localDeductibleAmount: item.deductible_amount ?? '',
       localAttachments: item.attachments ?? [],
     }))
   )
   const [expandedAttachments, setExpandedAttachments] = useState<Set<string>>(new Set())
-  const [submitting, setSubmitting] = useState(false)
+  const [itemSubmitting, setItemSubmitting] = useState<Record<string, string | null>>({})
   const [savingDeductible, setSavingDeductible] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -246,28 +248,44 @@ export default function SectionActionForm({
   const isApproved = section.status === 'APPROVED'
   const isDenied = section.status === 'DENIED'
   const isLocked = section.status === 'LOCKED'
-  // Full read-only: section acted on OR clearance completed
   const isReadOnly = isApproved || isDenied || isLocked || isCompleted
 
-  // Items visible to this user:
-  // - Read-only views → show all (HRBP, payroll, employee reviewing an approved section)
-  // - Active pending section with item-level assignments → only assigned items
   const visibleItems = useMemo(() => {
     if (!user) return items
     if (user.roles.includes('SUPER_ADMIN')) return items
     if (user.roles.includes('PAYROLL_MANAGER')) return items
     if (user.roles.includes('HRBP')) return items
-    // For read-only views, show everything
     if (isReadOnly) return items
     const hasItemLevelAssignments = items.some(
       (item) => (item.assigned_approvers?.length ?? 0) > 0
     )
     if (!hasItemLevelAssignments) return items
-    // Active pending section: only show items assigned to this user
     return items.filter((item) =>
       item.assigned_approvers?.some((a) => a.id === user.id)
     )
   }, [items, user, isReadOnly])
+
+  // Whether the current user can perform approve/hold actions on items
+  const canPerformActions = useMemo(() => {
+    if (!user) return false
+    if (isReadOnly) return false
+    if (user.roles.includes('SUPER_ADMIN')) return true
+    if (user.roles.includes('HRBP') && !user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))) return false
+    if (user.roles.includes('PAYROLL_MANAGER')) return false
+    return true
+  }, [user, isReadOnly])
+
+  // Can a specific item be acted on by this user?
+  const canActOnItem = (item: ItemRow): boolean => {
+    if (!canPerformActions) return false
+    if (item.status !== 'PENDING') return false
+    if (!user) return false
+    if (user.roles.includes('SUPER_ADMIN')) return true
+    if ((item.assigned_approvers?.length ?? 0) > 0) {
+      return item.assigned_approvers!.some((a) => a.id === user.id)
+    }
+    return true
+  }
 
   const updateItemComments = (id: string, comments: string) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, localComments: comments } : item)))
@@ -310,7 +328,6 @@ export default function SectionActionForm({
     })
   }
 
-  // Save deductible fields for a single item (post-approval edit)
   const saveDeductible = async (itemId: string) => {
     if (!token) return
     const item = items.find((i) => i.id === itemId)
@@ -336,77 +353,73 @@ export default function SectionActionForm({
     }
   }
 
-  // Determine if current user can edit deductible fields for a given item
   const canEditDeductible = (item: ItemRow): boolean => {
     if (isCompleted) return false
     if (!user) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
-    // Any of the assigned approvers can edit
     if (
       (item.assigned_approvers?.length ?? 0) > 0 &&
       item.assigned_approvers!.some((a) => a.id === user.id)
     ) return true
-    // No item-level assignment: section-level approver owns all items
     if (!(item.assigned_approvers?.length) && section.approver_id === user.id) return true
     return false
   }
 
-  const saveComments = async () => {
+  // Submit approve or hold for a single item
+  const submitItemAction = async (itemId: string, itemAction: 'APPROVE' | 'HOLD') => {
     if (!token) return
-    setSavingDeductible('comments')
-    setError(null)
-    try {
-      await Promise.all(
-        visibleItems.map((item) =>
-          fetch(`/api/clearance/${clearanceId}/items/${item.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ comments: item.localComments }),
-          })
-        )
-      )
-      onActionComplete()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save comments')
-    } finally {
-      setSavingDeductible(null)
-    }
-  }
+    const item = items.find((i) => i.id === itemId)
+    if (!item) return
 
-  const submitAction = async (action: 'APPROVE') => {
-    if (!token) return
-    setSubmitting(true)
+    setItemSubmitting((prev) => ({ ...prev, [itemId]: itemAction }))
     setError(null)
-    try {
-      // Approve all visible items automatically
-      const submitItems = visibleItems.map((i) => ({
-        id: i.id,
-        item_key: i.item_key,
-        status: 'APPROVED',
-        comments: i.localComments,
-        deductible_description: i.localDeductibleDescription || null,
-        deductible_amount: i.localDeductibleAmount !== '' ? i.localDeductibleAmount : null,
-      }))
 
+    try {
       const res = await fetch(`/api/clearance/${clearanceId}/sections/${section.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action, items: submitItems }),
+        body: JSON.stringify({
+          action: 'APPROVE',
+          items: [{
+            id: itemId,
+            item_key: item.item_key,
+            status: itemAction === 'APPROVE' ? 'APPROVED' : 'HOLD',
+            comments: item.localComments,
+            deductible_description: item.localDeductibleDescription || null,
+            deductible_amount: item.localDeductibleAmount !== '' ? item.localDeductibleAmount : null,
+          }],
+        }),
       })
+
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.message ?? 'Action failed')
       }
-      onActionComplete()
+
+      const responseSection = await res.json()
+
+      // Reflect new item status locally
+      const newStatus = itemAction === 'APPROVE' ? 'APPROVED' : 'HOLD'
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId
+            ? { ...i, status: newStatus, originalComments: i.localComments }
+            : i
+        )
+      )
+
+      // Section fully approved — trigger parent refresh
+      if (responseSection?.status === 'APPROVED') {
+        onActionComplete()
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
-      setSubmitting(false)
+      setItemSubmitting((prev) => ({ ...prev, [itemId]: null }))
     }
   }
 
   const hasItemAssignments = items.some((i) => (i.assigned_approvers?.length ?? 0) > 0)
-  // Show deductible columns: controlled by parent (based on role) or if item has show_deductibles flag
   const showDeductibleCol = showDeductibles || items.some((i) => i.show_deductibles)
 
   return (
@@ -463,30 +476,35 @@ export default function SectionActionForm({
           <table className="w-full text-sm table-fixed">
             <thead className="bg-gray-50">
               <tr className="border-b border-gray-100">
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[22%]">
+                <th className={`px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide ${showDeductibleCol ? 'w-[16%]' : 'w-[20%]'}`}>
                   Checklist Item
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[22%]">
+                <th className={`px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide ${showDeductibleCol ? 'w-[16%]' : 'w-[22%]'}`}>
                   Comments
                 </th>
                 {showDeductibleCol && (
                   <>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[18%]">
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
                       Deductible Desc.
                     </th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[13%]">
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
                       Amt (PKR)
                     </th>
                   </>
                 )}
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[9%]">
                   Status
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[7%]">
                   Files
                 </th>
+                {!isReadOnly && canPerformActions && (
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
+                    Action
+                  </th>
+                )}
                 {hasItemAssignments && (
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[9%]">
                     Assigned
                   </th>
                 )}
@@ -496,39 +514,54 @@ export default function SectionActionForm({
               {visibleItems.map((item) => {
                 const editDeductible = canEditDeductible(item)
                 const showItemDeductibles = showDeductibleCol && (showDeductibles || item.show_deductibles)
+                const actable = canActOnItem(item)
+                const submittingThis = itemSubmitting[item.id]
+                const isDirtyComment = item.localComments !== item.originalComments && item.status === 'PENDING'
+
                 return (
                   <React.Fragment key={item.id}>
                     <tr
                       className={
                         item.status === 'APPROVED'
                           ? 'bg-green-50/40'
+                          : item.status === 'HOLD'
+                          ? 'bg-amber-50/40'
                           : item.status === 'NA'
                           ? 'bg-gray-50/60'
                           : ''
                       }
                     >
                       {/* Description */}
-                      <td className="px-3 py-2.5 text-gray-800 align-middle font-medium text-xs">
+                      <td className="px-3 py-2.5 text-gray-800 align-top font-medium text-xs">
                         {item.description}
                       </td>
+
                       {/* Comments */}
-                      <td className="px-3 py-2.5 align-middle">
-                        {isCompleted || isDenied || isLocked ? (
+                      <td className="px-3 py-2.5 align-top">
+                        {isCompleted || isDenied || isLocked || item.status !== 'PENDING' ? (
                           <span className="text-gray-600 text-xs">{item.localComments || '—'}</span>
                         ) : (
-                          <input
-                            type="text"
-                            value={item.localComments}
-                            onChange={(e) => updateItemComments(item.id, e.target.value)}
-                            placeholder="Add comments..."
-                            className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-800 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
-                          />
+                          <div>
+                            <input
+                              type="text"
+                              value={item.localComments}
+                              onChange={(e) => updateItemComments(item.id, e.target.value)}
+                              placeholder="Add comments..."
+                              className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-800 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
+                            />
+                            {isDirtyComment && actable && (
+                              <p className="mt-1 text-[10px] text-amber-600 font-medium">
+                                ⚠ Approve or Hold to save
+                              </p>
+                            )}
+                          </div>
                         )}
                       </td>
+
                       {/* Deductible fields */}
                       {showDeductibleCol && (
                         <>
-                          <td className="px-3 py-2.5 align-middle">
+                          <td className="px-3 py-2.5 align-top">
                             {showItemDeductibles ? (
                               editDeductible && !isCompleted ? (
                                 <input
@@ -546,7 +579,7 @@ export default function SectionActionForm({
                               <span className="text-gray-300 text-xs">—</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 align-middle">
+                          <td className="px-3 py-2.5 align-top">
                             {showItemDeductibles ? (
                               editDeductible && !isCompleted ? (
                                 <div className="flex items-center gap-1">
@@ -578,12 +611,14 @@ export default function SectionActionForm({
                           </td>
                         </>
                       )}
+
                       {/* Status */}
-                      <td className="px-3 py-2.5 align-middle">
+                      <td className="px-3 py-2.5 align-top">
                         <Badge status={item.status} />
                       </td>
+
                       {/* Attachments toggle */}
-                      <td className="px-3 py-2.5 align-middle">
+                      <td className="px-3 py-2.5 align-top">
                         <button
                           type="button"
                           onClick={() => toggleAttachments(item.id)}
@@ -597,14 +632,61 @@ export default function SectionActionForm({
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                           </svg>
-                          {item.localAttachments.length > 0
-                            ? `${item.localAttachments.length}`
-                            : '+'}
+                          {item.localAttachments.length > 0 ? `${item.localAttachments.length}` : '+'}
                         </button>
                       </td>
+
+                      {/* Per-item action buttons */}
+                      {!isReadOnly && canPerformActions && (
+                        <td className="px-3 py-2.5 align-top">
+                          {actable ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={!!submittingThis}
+                                onClick={() => submitItemAction(item.id, 'APPROVE')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {submittingThis === 'APPROVE' ? (
+                                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!!submittingThis}
+                                onClick={() => submitItemAction(item.id, 'HOLD')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {submittingThis === 'HOLD' ? (
+                                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" />
+                                  </svg>
+                                )}
+                                Hold
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
+                        </td>
+                      )}
+
                       {/* Assigned to */}
                       {hasItemAssignments && (
-                        <td className="px-3 py-2.5 text-xs text-gray-600 align-middle">
+                        <td className="px-3 py-2.5 text-xs text-gray-600 align-top">
                           {(item.assigned_approvers?.length ?? 0) > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {item.assigned_approvers!.map((a) => (
@@ -623,14 +705,15 @@ export default function SectionActionForm({
                         </td>
                       )}
                     </tr>
+
                     {expandedAttachments.has(item.id) && (
                       <tr>
                         <td
                           colSpan={
                             2 +
                             (showDeductibleCol ? 2 : 0) +
-                            1 +
-                            1 +
+                            1 + 1 +
+                            (!isReadOnly && canPerformActions ? 1 : 0) +
                             (hasItemAssignments ? 1 : 0)
                           }
                           className="p-0"
@@ -662,32 +745,6 @@ export default function SectionActionForm({
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
           {error}
-        </div>
-      )}
-
-      {/* Single approve button — only when section is pending and user can act */}
-      {!isReadOnly && visibleItems.length > 0 && (
-        <div className="flex gap-3 pt-1">
-          <Button
-            onClick={() => submitAction('APPROVE')}
-            loading={submitting}
-            className="bg-green-600 text-white hover:bg-green-700 border-transparent focus:ring-green-500"
-          >
-            Approve
-          </Button>
-        </div>
-      )}
-
-      {/* Save comments button — visible after approval until clearance is completed */}
-      {isApproved && !isCompleted && visibleItems.length > 0 && (
-        <div className="flex gap-3 pt-1">
-          <Button
-            onClick={saveComments}
-            loading={savingDeductible === 'comments'}
-            className="bg-indigo-600 text-white hover:bg-indigo-700 border-transparent focus:ring-indigo-500"
-          >
-            Save Comments
-          </Button>
         </div>
       )}
     </div>

@@ -72,7 +72,7 @@ export interface ClearanceItem {
   item_key: string
   description: string
   comments?: string
-  status: 'PENDING' | 'NA' | 'APPROVED' | 'FLAGGED'
+  status: 'PENDING' | 'NA' | 'APPROVED' | 'FLAGGED' | 'HOLD'
   assigned_approvers?: { id: string; name: string }[]
   assigned_approver_id?: string
   assigned_approver_name?: string
