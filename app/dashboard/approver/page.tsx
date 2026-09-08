@@ -83,6 +83,15 @@ export default function ApproverDashboard() {
     fetchClearances()
   }, [fetchClearances])
 
+  const getSectionStatus = (c: ClearanceRequest) => {
+    if (!c.sections) return null
+    // Prefer server-tagged section, then fall back to role-derived key
+    const sec =
+      c.sections.find((s: any) => s.is_my_section) ??
+      (sectionKey ? c.sections.find((s) => s.section_key === sectionKey) : null)
+    return sec?.status ?? null
+  }
+
   const pending = clearances.filter((c) => {
     const secStatus = getSectionStatus(c)
     // Show in pending if my section still needs action
@@ -103,15 +112,6 @@ export default function ApproverDashboard() {
   })
 
   const displayList = activeTab === 'pending' ? pending : completed
-
-  const getSectionStatus = (c: ClearanceRequest) => {
-    if (!c.sections) return null
-    // Prefer server-tagged section, then fall back to role-derived key
-    const sec =
-      c.sections.find((s: any) => s.is_my_section) ??
-      (sectionKey ? c.sections.find((s) => s.section_key === sectionKey) : null)
-    return sec?.status ?? null
-  }
 
   const initials = user ? getInitials(user.full_name) : '?'
   const roleLabel = sectionKey ? getSectionLabel(sectionKey) : 'Approver'
