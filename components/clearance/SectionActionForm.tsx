@@ -243,6 +243,8 @@ export default function SectionActionForm({
   const [itemSubmitting, setItemSubmitting] = useState<Record<string, string | null>>({})
   const [savingDeductible, setSavingDeductible] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [commentSavedToast, setCommentSavedToast] = useState(false)
+  const commentSavedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isCompleted = clearanceStatus === 'COMPLETED'
   const isApproved = section.status === 'APPROVED'
@@ -351,6 +353,28 @@ export default function SectionActionForm({
       setError(err instanceof Error ? err.message : 'Failed to save deductible')
     } finally {
       setSavingDeductible(null)
+    }
+  }
+
+  // Auto-save comment on blur for HOLD items (comment only, no status change)
+  const saveCommentOnly = async (itemId: string) => {
+    const item = items.find((i) => i.id === itemId)
+    if (!item || item.status !== 'HOLD' || item.localComments === item.originalComments || !token) return
+    try {
+      const res = await fetch(`/api/clearance/${clearanceId}/sections/${section.id}/items`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ items: [{ id: itemId, comments: item.localComments }] }),
+      })
+      if (!res.ok) return
+      setItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, originalComments: i.localComments } : i))
+      )
+      if (commentSavedTimer.current) clearTimeout(commentSavedTimer.current)
+      setCommentSavedToast(true)
+      commentSavedTimer.current = setTimeout(() => setCommentSavedToast(false), 2500)
+    } catch {
+      // silent — approver can still approve/re-hold with the updated comment
     }
   }
 
@@ -471,6 +495,16 @@ export default function SectionActionForm({
         )
       })()}
 
+      {/* Comment saved toast */}
+      {commentSavedToast && (
+        <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-4 py-2 text-sm text-green-700 transition-opacity">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          Comment saved
+        </div>
+      )}
+
       {/* Items table */}
       {visibleItems.length > 0 ? (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
@@ -547,12 +581,13 @@ export default function SectionActionForm({
                               type="text"
                               value={item.localComments}
                               onChange={(e) => updateItemComments(item.id, e.target.value)}
+                              onBlur={() => saveCommentOnly(item.id)}
                               placeholder="Add comments..."
                               className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-800 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
                             />
-                            {isDirtyComment && actable && (
+                            {isDirtyComment && item.status === 'PENDING' && actable && (
                               <p className="mt-1 text-[10px] text-amber-600 font-medium">
-                                ⚠ Approve to save
+                                ⚠ Approve or Hold to save
                               </p>
                             )}
                           </div>
