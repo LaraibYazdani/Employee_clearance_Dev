@@ -211,13 +211,13 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
         )
       }
 
-      // Check whether all items in the section are now terminal (APPROVED / NA / HOLD)
+      // Check whether all items in the section are now terminal (APPROVED / NA only — HOLD is not terminal)
       const allItems = await prisma.clearanceItem.findMany({
         where: { clearance_section_id: sectionId },
         select: { status: true },
       })
       const allApproved = allItems.every(
-        (item) => item.status === 'APPROVED' || item.status === 'NA' || item.status === 'HOLD'
+        (item) => item.status === 'APPROVED' || item.status === 'NA'
       )
       if (!allApproved) {
         // In multi-approver sections, other approvers may still have outstanding items.

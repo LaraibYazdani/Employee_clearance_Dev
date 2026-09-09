@@ -276,9 +276,10 @@ export default function SectionActionForm({
   }, [user, isReadOnly])
 
   // Can a specific item be acted on by this user?
+  // HOLD items can still be approved (hold is temporary).
   const canActOnItem = (item: ItemRow): boolean => {
     if (!canPerformActions) return false
-    if (item.status !== 'PENDING') return false
+    if (item.status !== 'PENDING' && item.status !== 'HOLD') return false
     if (!user) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
     if ((item.assigned_approvers?.length ?? 0) > 0) {
@@ -516,7 +517,7 @@ export default function SectionActionForm({
                 const showItemDeductibles = showDeductibleCol && (showDeductibles || item.show_deductibles)
                 const actable = canActOnItem(item)
                 const submittingThis = itemSubmitting[item.id]
-                const isDirtyComment = item.localComments !== item.originalComments && item.status === 'PENDING'
+                const isDirtyComment = item.localComments !== item.originalComments && (item.status === 'PENDING' || item.status === 'HOLD')
 
                 return (
                   <React.Fragment key={item.id}>
@@ -538,7 +539,7 @@ export default function SectionActionForm({
 
                       {/* Comments */}
                       <td className="px-3 py-2.5 align-top">
-                        {isCompleted || isDenied || isLocked || item.status !== 'PENDING' ? (
+                        {isCompleted || isDenied || isLocked || (item.status !== 'PENDING' && item.status !== 'HOLD') ? (
                           <span className="text-gray-600 text-xs">{item.localComments || '—'}</span>
                         ) : (
                           <div>
@@ -551,7 +552,7 @@ export default function SectionActionForm({
                             />
                             {isDirtyComment && actable && (
                               <p className="mt-1 text-[10px] text-amber-600 font-medium">
-                                ⚠ Approve or Hold to save
+                                ⚠ Approve to save
                               </p>
                             )}
                           </div>
@@ -659,6 +660,8 @@ export default function SectionActionForm({
                                 )}
                                 Approve
                               </button>
+                              {/* Hold button only for PENDING items — HOLD items already on hold, can only be approved */}
+                              {item.status === 'PENDING' && (
                               <button
                                 type="button"
                                 disabled={!!submittingThis}
@@ -677,6 +680,7 @@ export default function SectionActionForm({
                                 )}
                                 Hold
                               </button>
+                              )}
                             </div>
                           ) : (
                             <span className="text-gray-300 text-xs">—</span>
