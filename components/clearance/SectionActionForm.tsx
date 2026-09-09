@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useRef } from 'react'
+import React, { useState, useMemo } from 'react'
 import { ClearanceSection, ClearanceItem, ClearanceItemAttachment } from '@/types'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
@@ -243,8 +243,6 @@ export default function SectionActionForm({
   const [itemSubmitting, setItemSubmitting] = useState<Record<string, string | null>>({})
   const [savingDeductible, setSavingDeductible] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [commentSavedToast, setCommentSavedToast] = useState(false)
-  const commentSavedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isCompleted = clearanceStatus === 'COMPLETED'
   const isApproved = section.status === 'APPROVED'
@@ -278,10 +276,9 @@ export default function SectionActionForm({
   }, [user, isReadOnly])
 
   // Can a specific item be acted on by this user?
-  // HOLD items can still be approved (hold is temporary).
   const canActOnItem = (item: ItemRow): boolean => {
     if (!canPerformActions) return false
-    if (item.status !== 'PENDING' && item.status !== 'HOLD') return false
+    if (item.status !== 'PENDING') return false
     if (!user) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
     if ((item.assigned_approvers?.length ?? 0) > 0) {
@@ -356,45 +353,6 @@ export default function SectionActionForm({
     }
   }
 
-  // Save comment on a HOLD item without changing its status.
-  // Uses the section PATCH route (action APPROVE, status HOLD) so the full
-  // ApproverAssignment auth logic applies — same path as Approve/Hold buttons.
-  const saveCommentOnly = async (itemId: string) => {
-    const item = items.find((i) => i.id === itemId)
-    if (!item || item.status !== 'HOLD' || !token) return
-    setItemSubmitting((prev) => ({ ...prev, [itemId]: 'SAVE_COMMENT' }))
-    setError(null)
-    try {
-      const res = await fetch(`/api/clearance/${clearanceId}/sections/${section.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          action: 'APPROVE',
-          items: [{
-            id: itemId,
-            item_key: item.item_key,
-            status: 'HOLD',
-            comments: item.localComments,
-          }],
-        }),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.message ?? data.error ?? 'Failed to save comment')
-      }
-      setItems((prev) =>
-        prev.map((i) => (i.id === itemId ? { ...i, originalComments: i.localComments } : i))
-      )
-      if (commentSavedTimer.current) clearTimeout(commentSavedTimer.current)
-      setCommentSavedToast(true)
-      commentSavedTimer.current = setTimeout(() => setCommentSavedToast(false), 2500)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save comment')
-    } finally {
-      setItemSubmitting((prev) => ({ ...prev, [itemId]: null }))
-    }
-  }
-
   const canEditDeductible = (item: ItemRow): boolean => {
     if (isCompleted) return false
     if (!user) return false
@@ -425,7 +383,8 @@ export default function SectionActionForm({
           items: [{
             id: itemId,
             item_key: item.item_key,
-            status: itemAction === 'APPROVE' ? 'APPROVED' : 'HOLD',
+            // Hold saves the comment but leaves item PENDING — no status field sent
+            ...(itemAction === 'APPROVE' ? { status: 'APPROVED' } : {}),
             comments: item.localComments,
             deductible_description: item.localDeductibleDescription || null,
             deductible_amount: item.localDeductibleAmount !== '' ? item.localDeductibleAmount : null,
@@ -440,12 +399,11 @@ export default function SectionActionForm({
 
       const responseSection = await res.json()
 
-      // Reflect new item status locally
-      const newStatus = itemAction === 'APPROVE' ? 'APPROVED' : 'HOLD'
+      // Reflect new item status locally (Hold keeps item PENDING, just marks comment saved)
       setItems((prev) =>
         prev.map((i) =>
           i.id === itemId
-            ? { ...i, status: newStatus, originalComments: i.localComments }
+            ? { ...i, status: itemAction === 'APPROVE' ? 'APPROVED' : i.status, originalComments: i.localComments }
             : i
         )
       )
@@ -512,16 +470,6 @@ export default function SectionActionForm({
         )
       })()}
 
-      {/* Comment saved toast */}
-      {commentSavedToast && (
-        <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-4 py-2 text-sm text-green-700 transition-opacity">
-          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          Comment saved
-        </div>
-      )}
-
       {/* Items table */}
       {visibleItems.length > 0 ? (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
@@ -568,7 +516,7 @@ export default function SectionActionForm({
                 const showItemDeductibles = showDeductibleCol && (showDeductibles || item.show_deductibles)
                 const actable = canActOnItem(item)
                 const submittingThis = itemSubmitting[item.id]
-                const isDirtyComment = item.localComments !== item.originalComments && (item.status === 'PENDING' || item.status === 'HOLD')
+                const isDirtyComment = item.localComments !== item.originalComments && item.status === 'PENDING'
 
                 return (
                   <React.Fragment key={item.id}>
@@ -590,7 +538,7 @@ export default function SectionActionForm({
 
                       {/* Comments */}
                       <td className="px-3 py-2.5 align-top">
-                        {isCompleted || isDenied || isLocked || (item.status !== 'PENDING' && item.status !== 'HOLD') ? (
+                        {isCompleted || isDenied || isLocked || item.status !== 'PENDING' ? (
                           <span className="text-gray-600 text-xs">{item.localComments || '—'}</span>
                         ) : (
                           <div>
@@ -601,7 +549,7 @@ export default function SectionActionForm({
                               placeholder="Add comments..."
                               className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-800 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
                             />
-                            {isDirtyComment && item.status === 'PENDING' && actable && (
+                            {isDirtyComment && actable && (
                               <p className="mt-1 text-[10px] text-amber-600 font-medium">
                                 ⚠ Approve or Hold to save
                               </p>
@@ -711,48 +659,25 @@ export default function SectionActionForm({
                                 )}
                                 Approve
                               </button>
-                              {/* Hold button only for PENDING items */}
-                              {item.status === 'PENDING' && (
-                                <button
-                                  type="button"
-                                  disabled={!!submittingThis}
-                                  onClick={() => submitItemAction(item.id, 'HOLD')}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  {submittingThis === 'HOLD' ? (
-                                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                    </svg>
-                                  ) : (
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" />
-                                    </svg>
-                                  )}
-                                  Hold
-                                </button>
-                              )}
-                              {/* Save Comment button for HOLD items — keeps item on hold, just updates comment */}
-                              {item.status === 'HOLD' && (
-                                <button
-                                  type="button"
-                                  disabled={!!submittingThis || item.localComments === item.originalComments}
-                                  onClick={() => saveCommentOnly(item.id)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                  {submittingThis === 'SAVE_COMMENT' ? (
-                                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                    </svg>
-                                  ) : (
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                                    </svg>
-                                  )}
-                                  Save Comment
-                                </button>
-                              )}
+                              {/* Hold saves comment without changing item status — item stays Pending */}
+                              <button
+                                type="button"
+                                disabled={!!submittingThis}
+                                onClick={() => submitItemAction(item.id, 'HOLD')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {submittingThis === 'HOLD' ? (
+                                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" />
+                                  </svg>
+                                )}
+                                Hold
+                              </button>
                             </div>
                           ) : (
                             <span className="text-gray-300 text-xs">—</span>
