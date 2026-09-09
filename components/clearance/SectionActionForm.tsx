@@ -286,7 +286,7 @@ export default function SectionActionForm({
   // Can a specific item be acted on by this user?
   const canActOnItem = (item: ItemRow): boolean => {
     if (!canPerformActions) return false
-    if (item.status !== 'PENDING') return false
+    if (item.status !== 'PENDING' && item.status !== 'HOLD') return false
     if (!user) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
     if ((item.assigned_approvers?.length ?? 0) > 0) {
@@ -391,8 +391,7 @@ export default function SectionActionForm({
           items: [{
             id: itemId,
             item_key: item.item_key,
-            // Hold saves the comment but leaves item PENDING — no status field sent
-            ...(itemAction === 'APPROVE' ? { status: 'APPROVED' } : {}),
+            status: itemAction === 'APPROVE' ? 'APPROVED' : 'HOLD',
             comments: item.localComments,
             deductible_description: item.localDeductibleDescription || null,
             deductible_amount: item.localDeductibleAmount !== '' ? item.localDeductibleAmount : null,
@@ -407,11 +406,10 @@ export default function SectionActionForm({
 
       const responseSection = await res.json()
 
-      // Reflect new item status locally (Hold keeps item PENDING, just marks comment saved)
       setItems((prev) =>
         prev.map((i) =>
           i.id === itemId
-            ? { ...i, status: itemAction === 'APPROVE' ? 'APPROVED' : i.status, originalComments: i.localComments }
+            ? { ...i, status: itemAction === 'APPROVE' ? 'APPROVED' : 'HOLD', originalComments: i.localComments }
             : i
         )
       )
@@ -538,7 +536,7 @@ export default function SectionActionForm({
                 const showItemDeductibles = showDeductibleCol && (showDeductibles || item.show_deductibles)
                 const actable = canActOnItem(item)
                 const submittingThis = itemSubmitting[item.id]
-                const isDirtyComment = item.localComments !== item.originalComments && item.status === 'PENDING'
+                const isDirtyComment = item.localComments !== item.originalComments && (item.status === 'PENDING' || item.status === 'HOLD')
 
                 return (
                   <React.Fragment key={item.id}>
@@ -560,7 +558,7 @@ export default function SectionActionForm({
 
                       {/* Comments */}
                       <td className="px-3 py-2.5 align-top">
-                        {isCompleted || isDenied || isLocked || item.status !== 'PENDING' ? (
+                        {isCompleted || isDenied || isLocked || (item.status !== 'PENDING' && item.status !== 'HOLD') ? (
                           <span className="text-gray-600 text-xs">{item.localComments || '—'}</span>
                         ) : (
                           <div>
