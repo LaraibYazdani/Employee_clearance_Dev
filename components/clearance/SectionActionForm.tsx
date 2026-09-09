@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useRef } from 'react'
+import React, { useState, useMemo, useRef, useCallback } from 'react'
 import { ClearanceSection, ClearanceItem, ClearanceItemAttachment } from '@/types'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
@@ -243,6 +243,14 @@ export default function SectionActionForm({
   const [itemSubmitting, setItemSubmitting] = useState<Record<string, string | null>>({})
   const [savingDeductible, setSavingDeductible] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [holdToast, setHoldToast] = useState<string | null>(null) // item description shown briefly after hold
+  const holdToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const showHoldToast = useCallback((description: string) => {
+    if (holdToastTimer.current) clearTimeout(holdToastTimer.current)
+    setHoldToast(description)
+    holdToastTimer.current = setTimeout(() => setHoldToast(null), 2500)
+  }, [])
 
   const isCompleted = clearanceStatus === 'COMPLETED'
   const isApproved = section.status === 'APPROVED'
@@ -408,6 +416,10 @@ export default function SectionActionForm({
         )
       )
 
+      if (itemAction === 'HOLD') {
+        showHoldToast(item.description)
+      }
+
       // Section fully approved — trigger parent refresh
       if (responseSection?.status === 'APPROVED') {
         onActionComplete()
@@ -469,6 +481,16 @@ export default function SectionActionForm({
           </div>
         )
       })()}
+
+      {/* Hold success toast */}
+      {holdToast && (
+        <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-800">
+          <svg className="w-4 h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" />
+          </svg>
+          <span><span className="font-medium">{holdToast}</span> — held, comment saved</span>
+        </div>
+      )}
 
       {/* Items table */}
       {visibleItems.length > 0 ? (
