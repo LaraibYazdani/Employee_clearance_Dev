@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef } from 'react'
 import { ClearanceSection, ClearanceItem, ClearanceItemAttachment } from '@/types'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
