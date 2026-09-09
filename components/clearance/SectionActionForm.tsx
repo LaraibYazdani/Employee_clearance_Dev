@@ -356,25 +356,42 @@ export default function SectionActionForm({
     }
   }
 
-  // Auto-save comment on blur for HOLD items (comment only, no status change)
+  // Save comment on a HOLD item without changing its status.
+  // Uses the section PATCH route (action APPROVE, status HOLD) so the full
+  // ApproverAssignment auth logic applies — same path as Approve/Hold buttons.
   const saveCommentOnly = async (itemId: string) => {
     const item = items.find((i) => i.id === itemId)
-    if (!item || item.status !== 'HOLD' || item.localComments === item.originalComments || !token) return
+    if (!item || item.status !== 'HOLD' || !token) return
+    setItemSubmitting((prev) => ({ ...prev, [itemId]: 'SAVE_COMMENT' }))
+    setError(null)
     try {
-      const res = await fetch(`/api/clearance/${clearanceId}/sections/${section.id}/items`, {
+      const res = await fetch(`/api/clearance/${clearanceId}/sections/${section.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ items: [{ id: itemId, comments: item.localComments }] }),
+        body: JSON.stringify({
+          action: 'APPROVE',
+          items: [{
+            id: itemId,
+            item_key: item.item_key,
+            status: 'HOLD',
+            comments: item.localComments,
+          }],
+        }),
       })
-      if (!res.ok) return
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.message ?? data.error ?? 'Failed to save comment')
+      }
       setItems((prev) =>
         prev.map((i) => (i.id === itemId ? { ...i, originalComments: i.localComments } : i))
       )
       if (commentSavedTimer.current) clearTimeout(commentSavedTimer.current)
       setCommentSavedToast(true)
       commentSavedTimer.current = setTimeout(() => setCommentSavedToast(false), 2500)
-    } catch {
-      // silent — approver can still approve/re-hold with the updated comment
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save comment')
+    } finally {
+      setItemSubmitting((prev) => ({ ...prev, [itemId]: null }))
     }
   }
 
@@ -723,9 +740,16 @@ export default function SectionActionForm({
                                   onClick={() => saveCommentOnly(item.id)}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                                  </svg>
+                                  {submittingThis === 'SAVE_COMMENT' ? (
+                                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                                    </svg>
+                                  )}
                                   Save Comment
                                 </button>
                               )}
