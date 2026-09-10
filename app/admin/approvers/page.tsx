@@ -470,7 +470,7 @@ export default function ApproverManagementPage() {
       })
       if (!res.ok) {
         const data = await res.json()
-        setFmError(data.message ?? 'Assignment failed')
+        setFmError(data.error ?? data.message ?? 'Assignment failed')
         return
       }
       setFmEditing(false)
@@ -496,12 +496,17 @@ export default function ApproverManagementPage() {
         })
         if (!res.ok) {
           const data = await res.json()
-          setFmError(data.error ?? 'Import failed')
+          setFmError(data.error ?? data.message ?? 'Import failed')
           return
         }
-        dbId = (await res.json()).user.id
+        const imported = await res.json()
+        dbId = imported.user?.id ?? imported.id ?? null
       }
-      await assignFinanceManager({ id: dbId!, full_name: sfUser.full_name, email: sfUser.email, designation: sfUser.designation })
+      if (!dbId) {
+        setFmError('Could not determine user ID after import')
+        return
+      }
+      await assignFinanceManager({ id: dbId, full_name: sfUser.full_name, email: sfUser.email, designation: sfUser.designation })
     } finally {
       setFmImporting(false)
     }
