@@ -242,6 +242,7 @@ export default function SectionActionForm({
   const [expandedAttachments, setExpandedAttachments] = useState<Set<string>>(new Set())
   const [itemSubmitting, setItemSubmitting] = useState<Record<string, string | null>>({})
   const [savingDeductible, setSavingDeductible] = useState<string | null>(null)
+  const [savingComment, setSavingComment] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [holdToast, setHoldToast] = useState<string | null>(null) // item description shown briefly after hold
   const holdToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -429,6 +430,36 @@ export default function SectionActionForm({
     }
   }
 
+  // Save just the comment on a HOLD or APPROVED item without changing its status
+  const saveItemComment = async (itemId: string) => {
+    if (!token) return
+    const item = items.find((i) => i.id === itemId)
+    if (!item) return
+    setSavingComment(itemId)
+    setError(null)
+    try {
+      const res = await fetch(`/api/clearance/${clearanceId}/sections/${section.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          action: 'APPROVE',
+          items: [{ id: itemId, item_key: item.item_key, status: item.status, comments: item.localComments }],
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.message ?? 'Failed to save comment')
+      }
+      setItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, originalComments: i.localComments } : i))
+      )
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save comment')
+    } finally {
+      setSavingComment(null)
+    }
+  }
+
   const hasItemAssignments = items.some((i) => (i.assigned_approvers?.length ?? 0) > 0)
   const showDeductibleCol = showDeductibles || items.some((i) => i.show_deductibles)
 
@@ -536,7 +567,7 @@ export default function SectionActionForm({
                 const showItemDeductibles = showDeductibleCol && (showDeductibles || item.show_deductibles)
                 const actable = canActOnItem(item)
                 const submittingThis = itemSubmitting[item.id]
-                const isDirtyComment = item.localComments !== item.originalComments && (item.status === 'PENDING' || item.status === 'HOLD')
+                const isDirtyComment = item.localComments !== item.originalComments
 
                 return (
                   <React.Fragment key={item.id}>
@@ -558,7 +589,7 @@ export default function SectionActionForm({
 
                       {/* Comments */}
                       <td className="px-3 py-2.5 align-top">
-                        {isCompleted || isDenied || isLocked || (item.status !== 'PENDING' && item.status !== 'HOLD') ? (
+                        {isCompleted || isDenied || isLocked || item.status === 'NA' ? (
                           <span className="text-gray-600 text-xs">{item.localComments || '—'}</span>
                         ) : (
                           <div>
@@ -569,10 +600,30 @@ export default function SectionActionForm({
                               placeholder="Add comments..."
                               className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-800 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
                             />
-                            {isDirtyComment && actable && (
+                            {isDirtyComment && item.status === 'PENDING' && actable && (
                               <p className="mt-1 text-[10px] text-amber-600 font-medium">
                                 ⚠ Approve or Hold to save
                               </p>
+                            )}
+                            {isDirtyComment && (item.status === 'HOLD' || item.status === 'APPROVED') && (
+                              <button
+                                type="button"
+                                disabled={savingComment === item.id}
+                                onClick={() => saveItemComment(item.id)}
+                                className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                              >
+                                {savingComment === item.id ? (
+                                  <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                                Save Comment
+                              </button>
                             )}
                           </div>
                         )}
