@@ -161,6 +161,7 @@ export async function notifyEmployeeClearanceInitiated(clearanceId: string): Pro
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyEmployeeClearanceInitiated: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   const { employee, initiated_by_hrbp: hrbp } = clearance
   console.log('[notifications] notifyEmployeeClearanceInitiated found clearance:', {
     clearanceId,
@@ -273,6 +274,7 @@ export async function notifyLineManager(clearanceId: string): Promise<void> {
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyLineManager: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   console.log('[notifications] notifyLineManager: line manager found', {
     clearanceId,
     lineManagerId: lineManager.id,
@@ -373,16 +375,27 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
   const assignments = await prisma.approverAssignment.findMany({
     where: {
       company_code: companyCode,
-      section_key: { in: section2Keys.filter((k) => k !== 'DEPT_HEAD') },
-      item_key: 'section',
+      section_key: { in: section2Keys.filter((k) => k !== 'DEPT_HEAD' && k !== 'LINE_MANAGER') },
     },
-    select: { section_key: true, approver_id: true },
+    select: { section_key: true, item_key: true, approver_id: true },
   })
   console.log('[notifications] notifySection2Approvers: approver assignments found:', { assignmentCount: assignments.length })
-  
+
+  // Section-level assignments take priority; item-level approvers fill gaps
+  const sectionLevelIds2 = new Map<string, Set<string>>()
+  const itemLevelIds2 = new Map<string, Set<string>>()
   for (const a of assignments) {
-    if (!sectionApproverMap.has(a.section_key)) sectionApproverMap.set(a.section_key, new Set())
-    sectionApproverMap.get(a.section_key)!.add(a.approver_id)
+    if (a.item_key === 'section') {
+      if (!sectionLevelIds2.has(a.section_key)) sectionLevelIds2.set(a.section_key, new Set())
+      sectionLevelIds2.get(a.section_key)!.add(a.approver_id)
+    } else {
+      if (!itemLevelIds2.has(a.section_key)) itemLevelIds2.set(a.section_key, new Set())
+      itemLevelIds2.get(a.section_key)!.add(a.approver_id)
+    }
+  }
+  for (const key of section2Keys.filter((k) => k !== 'DEPT_HEAD' && k !== 'LINE_MANAGER')) {
+    const approvers = sectionLevelIds2.get(key) ?? itemLevelIds2.get(key)
+    if (approvers) sectionApproverMap.set(key, approvers)
   }
 
   if (clearance.employee.line_manager_id) {
@@ -401,6 +414,7 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifySection2Approvers: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   let totalEmailsSent = 0
   let totalApproversProcessed = 0
 
@@ -437,7 +451,7 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
       })
 
       const html = emailWrapper(`
-        <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear All,</p>
+        <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${approver.full_name},</p>
         <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
           A clearance request for <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>
           requires your action.
@@ -445,7 +459,7 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
         <p style="color: #374151; font-size: 14px; margin: 0;">
           Please log in to the clearance portal and complete your assigned step.
         </p>
-        ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Complete Your Action')}
+        ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'Complete Your Action')}
       `)
 
       await sendEmail({
@@ -456,7 +470,7 @@ export async function notifySection2Approvers(clearanceId: string): Promise<void
       totalEmailsSent++
     }
   }
-  
+
   console.log('[notifications] notifySection2Approvers END:', {
     clearanceId,
     totalApproversProcessed,
@@ -518,19 +532,30 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
     where: {
       company_code: companyCode,
       section_key: { in: section3Keys },
-      item_key: 'section',
     },
-    select: { section_key: true, approver_id: true },
+    select: { section_key: true, item_key: true, approver_id: true },
   })
   console.log('[notifications] notifySection3Approvers: assignments found:', { assignmentCount: assignments.length })
 
   const sectionApproverMap = new Map<string, Set<string>>()
+  const sectionLevelIds3 = new Map<string, Set<string>>()
+  const itemLevelIds3 = new Map<string, Set<string>>()
   for (const a of assignments) {
-    if (!sectionApproverMap.has(a.section_key)) sectionApproverMap.set(a.section_key, new Set())
-    sectionApproverMap.get(a.section_key)!.add(a.approver_id)
+    if (a.item_key === 'section') {
+      if (!sectionLevelIds3.has(a.section_key)) sectionLevelIds3.set(a.section_key, new Set())
+      sectionLevelIds3.get(a.section_key)!.add(a.approver_id)
+    } else {
+      if (!itemLevelIds3.has(a.section_key)) itemLevelIds3.set(a.section_key, new Set())
+      itemLevelIds3.get(a.section_key)!.add(a.approver_id)
+    }
+  }
+  for (const key of section3Keys) {
+    const approvers = sectionLevelIds3.get(key) ?? itemLevelIds3.get(key)
+    if (approvers) sectionApproverMap.set(key, approvers)
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifySection3Approvers: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   let totalEmailsSent = 0
   let totalApproversProcessed = 0
 
@@ -568,7 +593,7 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
       })
 
       const html = emailWrapper(`
-        <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear All,</p>
+        <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${approver.full_name},</p>
         <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
           A clearance request for <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>
           requires your action.
@@ -576,7 +601,7 @@ export async function notifySection3Approvers(clearanceId: string): Promise<void
         <p style="color: #374151; font-size: 14px; margin: 0;">
           Please log in to the clearance portal and complete your assigned step.
         </p>
-        ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Complete Your Action')}
+        ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'Complete Your Action')}
       `)
 
       await sendEmail({
@@ -632,6 +657,7 @@ export async function notifyHRBPSectionApproved(
   })
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyHRBPSectionApproved: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   const html = emailWrapper(`
     <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${hrbp.full_name},</p>
     <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
@@ -691,6 +717,7 @@ export async function notifyHRBPSectionDenied(
   })
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyHRBPSectionDenied: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   const html = emailWrapper(`
     <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${hrbp.full_name},</p>
     <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
@@ -736,6 +763,7 @@ export async function notifyHRBPCompletion(clearanceId: string): Promise<void> {
 
   const { employee, initiated_by_hrbp: hrbp } = clearance
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyHRBPCompletion: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   console.log('[notifications] notifyHRBPCompletion: found clearance:', {
     clearanceId,
     employeeId: employee.id,
@@ -863,6 +891,7 @@ export async function notifyApproverRerouted(
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyApproverRerouted: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   let emailsSent = 0
 
   for (const approverId of approverIds) {
@@ -902,7 +931,7 @@ export async function notifyApproverRerouted(
       <p style="color: #374151; font-size: 14px; margin: 0;">
         Please log in to the clearance portal and complete your assigned step.
       </p>
-      ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Complete Your Action')}
+      ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'Complete Your Action')}
     `)
 
     await sendEmail({
@@ -959,6 +988,7 @@ export async function notifyApproverReminder(
   })
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyApproverReminder: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   const message = `Reminder: Your clearance action for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) is still pending.`
 
   await createNotification({
@@ -970,7 +1000,7 @@ export async function notifyApproverReminder(
   console.log('[notifications] notifyApproverReminder: notification created')
 
   const html = emailWrapper(`
-    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear,</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${approver.full_name},</p>
     <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
       Your clearance action for
       <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>
@@ -979,7 +1009,7 @@ export async function notifyApproverReminder(
     <p style="color: #374151; font-size: 14px; margin: 0;">
       Kindly complete the required step in the clearance portal at the earliest.
     </p>
-    ${ctaButton(`${appUrl}/clearance/${clearanceId}?view=approvals`, 'Complete Your Action', '#d97706')}
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'Complete Your Action', '#d97706')}
   `)
 
   await sendEmail({
@@ -1034,6 +1064,7 @@ export async function notifyPayrollManager(clearanceId: string): Promise<void> {
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyPayrollManager: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
   const message = `All sections for ${clearance.employee.full_name} (${clearance.employee.sf_employee_id}) have been approved. Please complete the clearance.`
 
   await createNotification({
