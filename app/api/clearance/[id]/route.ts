@@ -115,9 +115,12 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    const hasOpenObjections = clearance.clearance_sections.some((s) => s.status === 'OBJECTED')
+
     const canComplete =
       isPayrollManager &&
-      clearance.status === 'PENDING_PAYROLL'
+      clearance.status === 'PENDING_PAYROLL' &&
+      !hasOpenObjections
 
     // Batch-fetch all approver names (single query)
     const approverIdSet = new Set(allAssignments.map((a) => a.approver_id))
@@ -263,9 +266,30 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       })),
     }))
 
+    // Fetch all objection threads for this clearance (with messages + metadata)
+    const objectionThreads = await prisma.objectionThread.findMany({
+      where: { clearance_request_id: id },
+      orderBy: { created_at: 'asc' },
+      include: {
+        messages: {
+          orderBy: { created_at: 'asc' },
+          include: { sender: { select: { id: true, full_name: true } } },
+        },
+        raised_by: { select: { id: true, full_name: true } },
+        assigned_approver: { select: { id: true, full_name: true } },
+        clearance_item: { select: { id: true, description: true } },
+      },
+    })
+
+    // Attach threads to their respective sections
+    const sectionsWithThreads = sectionsWithDeductibleFlags.map((s) => ({
+      ...s,
+      objection_threads: objectionThreads.filter((t) => t.clearance_section_id === s.id),
+    }))
+
     return NextResponse.json({
       ...clearance,
-      sections: sectionsWithDeductibleFlags,
+      sections: sectionsWithThreads,
       can_complete: canComplete,
       is_payroll_manager: isPayrollManager,
       is_subject_employee: isSubjectEmployee,

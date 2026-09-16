@@ -1093,3 +1093,70 @@ export async function notifyPayrollManager(clearanceId: string): Promise<void> {
   })
   console.log('[notifications] notifyPayrollManager END: email sent', { clearanceId, payrollManagerId: payrollManager.id })
 }
+
+// ---------------------------------------------------------------------------
+// Payroll Manager objection — notify the item's original approver
+// ---------------------------------------------------------------------------
+
+export async function notifyApproverObjection(
+  clearanceId: string,
+  approverId: string,
+  itemDescription: string,
+  pmComment: string
+): Promise<void> {
+  console.log('[notifications] notifyApproverObjection START:', { clearanceId, approverId, itemDescription })
+
+  const [clearance, approver] = await Promise.all([
+    prisma.clearanceRequest.findUnique({
+      where: { id: clearanceId },
+      include: {
+        employee: { select: { full_name: true, sf_employee_id: true } },
+        initiated_by_hrbp: { select: { full_name: true } },
+      },
+    }),
+    prisma.user.findUnique({
+      where: { id: approverId },
+      select: { id: true, email: true, full_name: true },
+    }),
+  ])
+
+  if (!clearance || !approver) {
+    console.warn('[notifications] notifyApproverObjection SKIP: clearance or approver not found', { clearanceId, approverId })
+    return
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyApproverObjection: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
+
+  const message = `The Payroll Manager has raised an objection on item "${itemDescription}" in the clearance for ${clearance.employee.full_name}. Please log in to discuss and resolve.`
+
+  await createNotification({
+    recipientId: approver.id,
+    clearanceRequestId: clearanceId,
+    type: 'ITEM_OBJECTED',
+    message,
+  })
+
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${approver.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      The Payroll Manager has raised an objection on the following item in the clearance for
+      <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>:
+    </p>
+    <div style="margin: 16px 0; padding: 12px 16px; background: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px;">
+      <p style="margin: 0 0 6px 0; color: #9a3412; font-size: 13px; font-weight: 700;">${itemDescription}</p>
+      <p style="margin: 0; color: #9a3412; font-size: 13px;"><strong>Payroll Manager's comment:</strong> ${pmComment}</p>
+    </div>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      Please log in to the clearance portal to view the objection thread and respond.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Objection Thread', '#f97316')}
+  `)
+
+  await sendEmail({
+    to: approver.email,
+    subject: `Action Required: Objection Raised on Your Approval — ${clearance.employee.full_name}`,
+    html,
+  })
+  console.log('[notifications] notifyApproverObjection END: email sent', { clearanceId, approverId })
+}

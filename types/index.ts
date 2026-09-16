@@ -41,18 +41,44 @@ export interface ClearanceRequest {
   sections?: ClearanceSection[]
 }
 
+export interface ObjectionMessage {
+  id: string
+  thread_id: string
+  sender_id: string
+  sender?: { id: string; full_name: string }
+  message: string
+  created_at: string
+}
+
+export interface ObjectionThread {
+  id: string
+  clearance_request_id: string
+  clearance_section_id: string
+  clearance_item_id: string
+  raised_by_id: string
+  assigned_approver_id: string
+  status: 'OPEN' | 'RESOLVED'
+  created_at: string
+  resolved_at?: string
+  raised_by?: { id: string; full_name: string }
+  assigned_approver?: { id: string; full_name: string }
+  clearance_item?: { id: string; description: string }
+  messages?: ObjectionMessage[]
+}
+
 export interface ClearanceSection {
   id: string
   clearance_request_id: string
   section_key: string
   label?: string
-  status: 'PENDING' | 'APPROVED' | 'DENIED' | 'LOCKED'
+  status: 'PENDING' | 'APPROVED' | 'DENIED' | 'LOCKED' | 'OBJECTED' | string
   approver_id?: string
   approver_name?: string
   decision_at?: string
   note?: string
   items?: ClearanceItem[]
   can_act?: boolean
+  objection_threads?: ObjectionThread[]
 }
 
 export interface ClearanceItemAttachment {
@@ -72,7 +98,9 @@ export interface ClearanceItem {
   item_key: string
   description: string
   comments?: string
-  status: 'PENDING' | 'NA' | 'APPROVED' | 'FLAGGED' | 'HOLD'
+  status: 'PENDING' | 'NA' | 'APPROVED' | 'FLAGGED' | 'HOLD' | 'OBJECTED' | string
+  approver_id?: string
+  approver_name?: string
   assigned_approvers?: { id: string; name: string }[]
   assigned_approver_id?: string
   assigned_approver_name?: string

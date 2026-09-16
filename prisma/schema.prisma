@@ -50,6 +50,11 @@ model User {
   approver_assignments ApproverAssignment[]        @relation("ApproverAssignments")
   uploaded_attachments ClearanceItemAttachment[]   @relation("AttachmentUploads")
 
+  // Objection workflow
+  objection_threads_raised   ObjectionThread[] @relation("ObjectionRaisedBy")
+  objection_threads_assigned ObjectionThread[] @relation("ObjectionAssignedApprover")
+  objection_messages         ObjectionMessage[] @relation("ObjectionMessageSender")
+
   @@map("users")
 }
 
@@ -80,6 +85,7 @@ model ClearanceRequest {
   finance_entries     FinanceEntry[]
   activity_logs       ActivityLog[]
   notifications       Notification[]
+  objection_threads   ObjectionThread[]
 
   @@map("clearance_requests")
 }
@@ -100,6 +106,7 @@ model ClearanceSection {
   // Relations
   clearance_request    ClearanceRequest @relation(fields: [clearance_request_id], references: [id], onDelete: Cascade)
   clearance_items      ClearanceItem[]
+  objection_threads    ObjectionThread[]
 
   @@map("clearance_sections")
 }
@@ -122,6 +129,7 @@ model ClearanceItem {
   // Relations
   clearance_section    ClearanceSection          @relation(fields: [clearance_section_id], references: [id], onDelete: Cascade)
   attachments          ClearanceItemAttachment[]
+  objection_threads    ObjectionThread[]
 
   @@map("clearance_items")
 }
@@ -238,4 +246,42 @@ model Notification {
   clearance_request    ClearanceRequest @relation(fields: [clearance_request_id], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+model ObjectionThread {
+  id                   String    @id @default(cuid())
+  clearance_request_id String
+  clearance_section_id String
+  clearance_item_id    String
+  raised_by_id         String
+  assigned_approver_id String
+  status               String    @default("OPEN")
+  created_at           DateTime  @default(now())
+  resolved_at          DateTime?
+
+  clearance_request    ClearanceRequest @relation(fields: [clearance_request_id], references: [id], onDelete: Cascade)
+  clearance_section    ClearanceSection @relation(fields: [clearance_section_id], references: [id], onDelete: Cascade)
+  clearance_item       ClearanceItem    @relation(fields: [clearance_item_id], references: [id], onDelete: Cascade)
+  raised_by            User             @relation("ObjectionRaisedBy", fields: [raised_by_id], references: [id])
+  assigned_approver    User             @relation("ObjectionAssignedApprover", fields: [assigned_approver_id], references: [id])
+  messages             ObjectionMessage[]
+
+  @@index([clearance_request_id])
+  @@index([clearance_section_id])
+  @@index([clearance_item_id])
+  @@map("objection_threads")
+}
+
+model ObjectionMessage {
+  id         String          @id @default(cuid())
+  thread_id  String
+  sender_id  String
+  message    String          @db.Text
+  created_at DateTime        @default(now())
+
+  thread     ObjectionThread @relation(fields: [thread_id], references: [id], onDelete: Cascade)
+  sender     User            @relation("ObjectionMessageSender", fields: [sender_id], references: [id])
+
+  @@index([thread_id])
+  @@map("objection_messages")
 }

@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useCallback } from 'react'
 import { ClearanceSection, ClearanceItem, ClearanceItemAttachment } from '@/types'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
+import ObjectionChat from '@/components/clearance/ObjectionChat'
 import { useAuth } from '@/lib/auth-context'
 
 interface ItemRow extends ClearanceItem {
@@ -19,6 +20,7 @@ interface SectionActionFormProps {
   clearanceId: string
   clearanceStatus: string
   showDeductibles: boolean
+  isPayrollManager?: boolean
   onActionComplete: () => void
 }
 
@@ -225,6 +227,7 @@ export default function SectionActionForm({
   clearanceId,
   clearanceStatus,
   showDeductibles,
+  isPayrollManager = false,
   onActionComplete,
 }: SectionActionFormProps) {
   const { token, user } = useAuth()
@@ -246,6 +249,9 @@ export default function SectionActionForm({
   const [error, setError] = useState<string | null>(null)
   const [holdToast, setHoldToast] = useState<string | null>(null) // item description shown briefly after hold
   const holdToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [objectingItem, setObjectingItem] = useState<string | null>(null) // itemId being objected
+  const [objectionComment, setObjectionComment] = useState<Record<string, string>>({})
+  const [submittingObjection, setSubmittingObjection] = useState<string | null>(null)
 
   const showHoldToast = useCallback((description: string) => {
     if (holdToastTimer.current) clearTimeout(holdToastTimer.current)
@@ -257,6 +263,7 @@ export default function SectionActionForm({
   const isApproved = section.status === 'APPROVED'
   const isDenied = section.status === 'DENIED'
   const isLocked = section.status === 'LOCKED'
+  const isObjectedSection = section.status === 'OBJECTED'
   const isReadOnly = isApproved || isDenied || isLocked || isCompleted
 
   const visibleItems = useMemo(() => {
@@ -366,11 +373,15 @@ export default function SectionActionForm({
     if (isCompleted) return false
     if (!user) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
+    // PM can edit deductibles on objected items during the objection period
+    if (isPayrollManager && item.status === 'OBJECTED') return true
     if (
       (item.assigned_approvers?.length ?? 0) > 0 &&
       item.assigned_approvers!.some((a) => a.id === user.id)
     ) return true
     if (!(item.assigned_approvers?.length) && section.approver_id === user.id) return true
+    // Allow the item's own approver to edit deductibles during objection
+    if (isObjectedSection && (item as any).approver_id === user.id) return true
     return false
   }
 
@@ -460,11 +471,50 @@ export default function SectionActionForm({
     }
   }
 
+  const raiseObjection = async (itemId: string) => {
+    if (!token) return
+    const comment = objectionComment[itemId]?.trim()
+    if (!comment) return
+    setSubmittingObjection(itemId)
+    setError(null)
+    try {
+      const res = await fetch(`/api/clearance/${clearanceId}/items/${itemId}/object`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ comment }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error ?? 'Failed to raise objection')
+      }
+      setObjectingItem(null)
+      setObjectionComment((prev) => ({ ...prev, [itemId]: '' }))
+      onActionComplete()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to raise objection')
+    } finally {
+      setSubmittingObjection(null)
+    }
+  }
+
   const hasItemAssignments = items.some((i) => (i.assigned_approvers?.length ?? 0) > 0)
   const showDeductibleCol = showDeductibles || items.some((i) => i.show_deductibles)
 
   return (
     <div className="space-y-4">
+      {/* Objected section banner */}
+      {isObjectedSection && (
+        <div className="rounded-lg px-4 py-3 text-sm border bg-orange-50 text-orange-800 border-orange-200">
+          <div className="flex items-center gap-2 font-medium">
+            <svg className="w-4 h-4 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <span>{section.note ?? 'Payroll Manager has raised an objection on an item in this section'}</span>
+          </div>
+          <p className="mt-1 text-xs text-orange-600">Discuss and resolve via the objection thread below. Sign-off is paused until resolved.</p>
+        </div>
+      )}
+
       {/* Status info banner */}
       {isReadOnly && (
         <div
@@ -552,6 +602,11 @@ export default function SectionActionForm({
                 {!isReadOnly && canPerformActions && (
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
                     Action
+                  </th>
+                )}
+                {isPayrollManager && (isApproved || isObjectedSection) && (
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-[12%]">
+                    Objection
                   </th>
                 )}
                 {hasItemAssignments && (
@@ -749,6 +804,63 @@ export default function SectionActionForm({
                         </td>
                       )}
 
+                      {/* PM Objection cell */}
+                      {isPayrollManager && (isApproved || isObjectedSection) && (
+                        <td className="px-3 py-2.5 align-top">
+                          {item.status === 'APPROVED' && !isCompleted && (
+                            objectingItem === item.id ? (
+                              <div className="space-y-1 min-w-[140px]">
+                                <input
+                                  type="text"
+                                  value={objectionComment[item.id] ?? ''}
+                                  onChange={(e) => setObjectionComment((p) => ({ ...p, [item.id]: e.target.value }))}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') raiseObjection(item.id) }}
+                                  placeholder="Reason for objection…"
+                                  autoFocus
+                                  className="w-full rounded border border-orange-300 px-2 py-1 text-xs text-gray-800 focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none"
+                                />
+                                <div className="flex gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={submittingObjection === item.id || !objectionComment[item.id]?.trim()}
+                                    onClick={() => raiseObjection(item.id)}
+                                    className="flex-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-40"
+                                  >
+                                    {submittingObjection === item.id ? '…' : 'Submit'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setObjectingItem(null); setObjectionComment((p) => ({ ...p, [item.id]: '' })) }}
+                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setObjectingItem(item.id)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                </svg>
+                                Object
+                              </button>
+                            )
+                          )}
+                          {item.status === 'OBJECTED' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700 border border-orange-200">
+                              <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                              </svg>
+                              Objected
+                            </span>
+                          )}
+                        </td>
+                      )}
+
                       {/* Assigned to */}
                       {hasItemAssignments && (
                         <td className="px-3 py-2.5 text-xs text-gray-600 align-top">
@@ -779,6 +891,7 @@ export default function SectionActionForm({
                             (showDeductibleCol ? 2 : 0) +
                             1 + 1 +
                             (!isReadOnly && canPerformActions ? 1 : 0) +
+                            (isPayrollManager && (isApproved || isObjectedSection) ? 1 : 0) +
                             (hasItemAssignments ? 1 : 0)
                           }
                           className="p-0"
@@ -805,6 +918,16 @@ export default function SectionActionForm({
             ? 'No checklist items assigned to you for this section.'
             : 'No checklist items for this section.'}
         </p>
+      )}
+
+      {/* Objection chat threads */}
+      {(section.objection_threads?.length ?? 0) > 0 && (
+        <ObjectionChat
+          threads={section.objection_threads!}
+          clearanceId={clearanceId}
+          isPayrollManager={isPayrollManager}
+          onResolved={onActionComplete}
+        />
       )}
 
       {error && (
