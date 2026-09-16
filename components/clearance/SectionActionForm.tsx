@@ -442,8 +442,8 @@ export default function SectionActionForm({
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          action: 'APPROVE',
-          items: [{ id: itemId, item_key: item.item_key, status: item.status, comments: item.localComments }],
+          action: 'SAVE_COMMENT',
+          items: [{ id: itemId, item_key: item.item_key, comments: item.localComments }],
         }),
       })
       if (!res.ok) {

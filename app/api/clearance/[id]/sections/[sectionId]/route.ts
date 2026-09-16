@@ -43,8 +43,8 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  if (!body.action || !['APPROVE', 'DENY'].includes(body.action)) {
-    return NextResponse.json({ error: 'action must be APPROVE or DENY' }, { status: 400 })
+  if (!body.action || !['APPROVE', 'DENY', 'SAVE_COMMENT'].includes(body.action)) {
+    return NextResponse.json({ error: 'action must be APPROVE, DENY, or SAVE_COMMENT' }, { status: 400 })
   }
 
   if (body.action === 'DENY' && !body.note?.trim()) {
@@ -95,6 +95,26 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
 
     if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !hasAnyAssignment && !isLineManagerForEmployee) {
       return NextResponse.json({ error: 'Forbidden: You cannot access this clearance' }, { status: 403 })
+    }
+
+    // SAVE_COMMENT — only updates item comments; skips all section-status guards
+    if (body.action === 'SAVE_COMMENT') {
+      if (!Array.isArray(body.items) || body.items.length === 0) {
+        return NextResponse.json({ error: 'items array required for SAVE_COMMENT' }, { status: 400 })
+      }
+      await Promise.all(
+        body.items.map((item) =>
+          prisma.clearanceItem.updateMany({
+            where: { id: item.id, clearance_section_id: sectionId },
+            data: { ...(item.comments !== undefined ? { comments: item.comments } : {}) },
+          })
+        )
+      )
+      const currentSection = await prisma.clearanceSection.findUnique({
+        where: { id: sectionId },
+        include: { clearance_items: true },
+      })
+      return NextResponse.json(currentSection)
     }
 
     // Block all actions on a completed clearance
