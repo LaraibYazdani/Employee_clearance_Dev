@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { notifyApproverObjection } from '@/lib/notifications'
+import { notifyApproverObjection, notifyHRBPObjectionRaised } from '@/lib/notifications'
 
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000
 function nowPKT(): Date {
@@ -120,11 +120,18 @@ export const POST = withAuth(async (req: AuthenticatedRequest, context: any) => 
       return t
     })
 
-    // Notify the item's original approver
+    // Notify the item's original approver (email + in-app)
     try {
       await notifyApproverObjection(clearanceId, item.approver_id!, item.description, body.comment.trim())
     } catch (e) {
       console.error('[POST object] notifyApproverObjection error:', e)
+    }
+
+    // Notify HRBP for visibility (in-app)
+    try {
+      await notifyHRBPObjectionRaised(clearanceId, item.description, user.full_name)
+    } catch (e) {
+      console.error('[POST object] notifyHRBPObjectionRaised error:', e)
     }
 
     return NextResponse.json(thread, { status: 201 })

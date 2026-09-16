@@ -1160,3 +1160,174 @@ export async function notifyApproverObjection(
   })
   console.log('[notifications] notifyApproverObjection END: email sent', { clearanceId, approverId })
 }
+
+// ---------------------------------------------------------------------------
+// Objection raised — in-app only to HRBP so they have visibility
+// ---------------------------------------------------------------------------
+
+export async function notifyHRBPObjectionRaised(
+  clearanceId: string,
+  itemDescription: string,
+  pmName: string
+): Promise<void> {
+  console.log('[notifications] notifyHRBPObjectionRaised START:', { clearanceId, itemDescription })
+
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: { employee: { select: { full_name: true } }, initiated_by_hrbp: { select: { id: true, full_name: true } } },
+  })
+  if (!clearance) return
+
+  await createNotification({
+    recipientId: clearance.initiated_by_hrbp.id,
+    clearanceRequestId: clearanceId,
+    type: 'ITEM_OBJECTED',
+    message: `Payroll Manager ${pmName} raised an objection on item "${itemDescription}" in ${clearance.employee.full_name}'s clearance.`,
+  })
+  console.log('[notifications] notifyHRBPObjectionRaised END', { clearanceId })
+}
+
+// ---------------------------------------------------------------------------
+// Objection chat — new message: notify the OTHER party in the thread
+// ---------------------------------------------------------------------------
+
+export async function notifyObjectionMessage(
+  clearanceId: string,
+  threadId: string,
+  senderId: string,
+  senderName: string,
+  recipientId: string,
+  itemDescription: string,
+  messageText: string
+): Promise<void> {
+  console.log('[notifications] notifyObjectionMessage START:', { clearanceId, threadId, senderId, recipientId })
+
+  const [clearance, recipient] = await Promise.all([
+    prisma.clearanceRequest.findUnique({
+      where: { id: clearanceId },
+      include: { employee: { select: { full_name: true, sf_employee_id: true } } },
+    }),
+    prisma.user.findUnique({
+      where: { id: recipientId },
+      select: { id: true, email: true, full_name: true },
+    }),
+  ])
+
+  if (!clearance || !recipient) {
+    console.warn('[notifications] notifyObjectionMessage SKIP: clearance or recipient not found', { clearanceId, recipientId })
+    return
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyObjectionMessage: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
+
+  await createNotification({
+    recipientId: recipient.id,
+    clearanceRequestId: clearanceId,
+    type: 'OBJECTION_MESSAGE',
+    message: `${senderName} replied in the objection thread for "${itemDescription}" on ${clearance.employee.full_name}'s clearance.`,
+  })
+
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${recipient.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      <strong>${senderName}</strong> has replied in the objection thread for
+      <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>'s clearance:
+    </p>
+    <div style="margin: 16px 0; padding: 12px 16px; background: #f8fafc; border-left: 4px solid #6366f1; border-radius: 4px;">
+      <p style="margin: 0 0 4px 0; color: #6b7280; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+        Objection: ${itemDescription}
+      </p>
+      <p style="margin: 0; color: #1f2937; font-size: 14px;">${messageText}</p>
+    </div>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      Log in to continue the discussion.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Objection Thread', '#6366f1')}
+  `)
+
+  await sendEmail({
+    to: recipient.email,
+    subject: `New Reply in Objection Thread — ${clearance.employee.full_name}`,
+    html,
+  })
+  console.log('[notifications] notifyObjectionMessage END: email sent', { clearanceId, threadId, recipientId })
+}
+
+// ---------------------------------------------------------------------------
+// Objection resolved — notify the assigned approver + HRBP in-app
+// ---------------------------------------------------------------------------
+
+export async function notifyObjectionResolved(
+  clearanceId: string,
+  approverId: string,
+  itemDescription: string,
+  pmName: string
+): Promise<void> {
+  console.log('[notifications] notifyObjectionResolved START:', { clearanceId, approverId, itemDescription })
+
+  const [clearance, approver] = await Promise.all([
+    prisma.clearanceRequest.findUnique({
+      where: { id: clearanceId },
+      include: {
+        employee: { select: { full_name: true, sf_employee_id: true } },
+        initiated_by_hrbp: { select: { id: true, full_name: true } },
+      },
+    }),
+    prisma.user.findUnique({
+      where: { id: approverId },
+      select: { id: true, email: true, full_name: true },
+    }),
+  ])
+
+  if (!clearance || !approver) {
+    console.warn('[notifications] notifyObjectionResolved SKIP: clearance or approver not found', { clearanceId, approverId })
+    return
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyObjectionResolved: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
+
+  const resolvedMessage = `The objection on item "${itemDescription}" in ${clearance.employee.full_name}'s clearance has been resolved by Payroll Manager ${pmName}.`
+
+  // Notify the approver (email + in-app)
+  await createNotification({
+    recipientId: approver.id,
+    clearanceRequestId: clearanceId,
+    type: 'OBJECTION_RESOLVED',
+    message: resolvedMessage,
+  })
+
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${approver.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      The objection raised on your approval for the following item in
+      <strong>${clearance.employee.full_name}, ${clearance.employee.sf_employee_id}</strong>'s
+      clearance has been resolved:
+    </p>
+    <div style="margin: 16px 0; padding: 12px 16px; background: #f0fdf4; border-left: 4px solid #16a34a; border-radius: 4px;">
+      <p style="margin: 0; color: #14532d; font-size: 13px; font-weight: 700;">${itemDescription}</p>
+      <p style="margin: 4px 0 0 0; color: #14532d; font-size: 12px;">Resolved by ${pmName}</p>
+    </div>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      The item has been reinstated as Approved and the clearance can now proceed.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Clearance', '#16a34a')}
+  `)
+
+  await sendEmail({
+    to: approver.email,
+    subject: `Objection Resolved — ${clearance.employee.full_name}`,
+    html,
+  })
+
+  // Notify HRBP in-app (visibility only — no email to avoid noise)
+  await createNotification({
+    recipientId: clearance.initiated_by_hrbp.id,
+    clearanceRequestId: clearanceId,
+    type: 'OBJECTION_RESOLVED',
+    message: resolvedMessage,
+  })
+
+  console.log('[notifications] notifyObjectionResolved END: email sent to approver, in-app to HRBP', { clearanceId, approverId })
+}

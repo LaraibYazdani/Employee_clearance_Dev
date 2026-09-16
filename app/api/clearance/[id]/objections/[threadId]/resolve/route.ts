@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { checkAndCompleteClearance } from '@/lib/clearance-workflow'
+import { notifyObjectionResolved } from '@/lib/notifications'
 
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000
 function nowPKT(): Date {
@@ -106,6 +107,18 @@ export const POST = withAuth(async (req: AuthenticatedRequest, context: any) => 
         },
       })
     })
+
+    // Notify assigned approver (email + in-app) and HRBP (in-app) of resolution
+    try {
+      await notifyObjectionResolved(
+        clearanceId,
+        thread.assigned_approver_id,
+        thread.clearance_item.description,
+        user.full_name
+      )
+    } catch (e) {
+      console.error('[resolve objection] notifyObjectionResolved error:', e)
+    }
 
     // In case this unlocks clearance completion
     try {

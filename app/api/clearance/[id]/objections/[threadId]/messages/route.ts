@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAuth, AuthenticatedRequest } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { notifyObjectionMessage } from '@/lib/notifications'
 
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000
 function nowPKT(): Date {
@@ -35,6 +36,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest, context: any) => 
         raised_by_id: true,
         assigned_approver_id: true,
         status: true,
+        clearance_item: { select: { description: true } },
       },
     })
 
@@ -64,6 +66,25 @@ export const POST = withAuth(async (req: AuthenticatedRequest, context: any) => 
       },
       include: { sender: { select: { id: true, full_name: true } } },
     })
+
+    // Notify the OTHER party in the thread
+    const recipientId = user.id === thread.raised_by_id
+      ? thread.assigned_approver_id
+      : thread.raised_by_id
+
+    try {
+      await notifyObjectionMessage(
+        clearanceId,
+        threadId,
+        user.id,
+        user.full_name,
+        recipientId,
+        thread.clearance_item?.description ?? 'item',
+        body.message.trim()
+      )
+    } catch (e) {
+      console.error('[POST objection message] notifyObjectionMessage error:', e)
+    }
 
     return NextResponse.json(message, { status: 201 })
   } catch (error) {
