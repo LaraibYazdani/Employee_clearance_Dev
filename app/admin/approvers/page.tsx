@@ -1047,7 +1047,7 @@ export default function ApproverManagementPage() {
                                         <p className="text-xs text-gray-400 leading-tight">{a.approver.designation}</p>
                                       </div>
                                       <button
-                                        onClick={() => removeApprover(section.section_key, item.item_key, a.approver.id)}
+                                        onClick={() => removeApprover(section.section_key, a.item_key, a.approver.id)}
                                         className="ml-1 text-red-400 hover:text-red-600 transition-colors"
                                         title="Remove approver"
                                       >
