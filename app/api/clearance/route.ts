@@ -370,7 +370,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
       sectionCreateData.push({
         section_key: template.section_key,
         phase: template.phase,
-        status: 'PENDING',
+        status: template.phase === 3 ? 'LOCKED' : 'PENDING',
         approver_id: approver.id,
         approver_name: approver.name,
         clearance_items: {
