@@ -687,7 +687,7 @@ export default function SectionActionForm({
                                   type="text"
                                   value={item.localDeductibleDescription}
                                   onChange={(e) => updateDeductibleDesc(item.id, e.target.value)}
-                                  onBlur={() => isApproved && saveDeductible(item.id)}
+                                  onBlur={() => (isApproved || isObjectedSection) && saveDeductible(item.id)}
                                   placeholder="e.g. Notice period"
                                   className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-800 focus:border-purple-400 focus:ring-1 focus:ring-purple-200 outline-none"
                                 />
@@ -708,7 +708,7 @@ export default function SectionActionForm({
                                     min="0"
                                     value={item.localDeductibleAmount}
                                     onChange={(e) => updateDeductibleAmount(item.id, e.target.value)}
-                                    onBlur={() => isApproved && saveDeductible(item.id)}
+                                    onBlur={() => (isApproved || isObjectedSection) && saveDeductible(item.id)}
                                     placeholder="0.00"
                                     className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-800 focus:border-purple-400 focus:ring-1 focus:ring-purple-200 outline-none"
                                   />
