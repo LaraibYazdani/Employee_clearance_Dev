@@ -1331,3 +1331,77 @@ export async function notifyObjectionResolved(
 
   console.log('[notifications] notifyObjectionResolved END: email sent to approver, in-app to HRBP', { clearanceId, approverId })
 }
+
+// ---------------------------------------------------------------------------
+// Item held — notifies HRBP (email + in-app) and employee (in-app)
+// ---------------------------------------------------------------------------
+
+export async function notifyItemHeld(
+  clearanceId: string,
+  sectionKey: string,
+  approverName: string,
+  itemDescription: string,
+  comment: string
+): Promise<void> {
+  console.log('[notifications] notifyItemHeld START:', { clearanceId, sectionKey, itemDescription })
+
+  const clearance = await prisma.clearanceRequest.findUnique({
+    where: { id: clearanceId },
+    include: {
+      employee: { select: { id: true, full_name: true, sf_employee_id: true, email: true } },
+      initiated_by_hrbp: { select: { id: true, full_name: true, email: true } },
+    },
+  })
+  if (!clearance) {
+    console.warn('[notifications] notifyItemHeld SKIP: clearance not found', { clearanceId })
+    return
+  }
+
+  const hrbp = clearance.initiated_by_hrbp
+  const employee = clearance.employee
+  const sectionLabel = SECTION_LABELS[sectionKey] ?? sectionKey
+  const message = `${approverName} has put "${itemDescription}" on hold in ${sectionLabel} for ${employee.full_name}'s clearance. Comment: "${comment}"`
+
+  // In-app: HRBP
+  await createNotification({
+    recipientId: hrbp.id,
+    clearanceRequestId: clearanceId,
+    type: 'ITEM_HELD',
+    message,
+  })
+
+  // In-app: employee
+  await createNotification({
+    recipientId: employee.id,
+    clearanceRequestId: clearanceId,
+    type: 'ITEM_HELD',
+    message,
+  })
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (!appUrl) console.warn('[notifications] notifyItemHeld: NEXT_PUBLIC_APP_URL is not set — CTA links in emails will be broken')
+
+  const html = emailWrapper(`
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">Dear ${hrbp.full_name},</p>
+    <p style="color: #374151; font-size: 14px; margin: 0 0 16px 0;">
+      An item has been placed on hold in <strong>${employee.full_name}</strong>
+      (${employee.sf_employee_id})'s clearance by <strong>${approverName}</strong>.
+    </p>
+    <div style="margin: 16px 0; padding: 12px 16px; background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 4px;">
+      <p style="margin: 0; color: #92400e; font-size: 13px; font-weight: 700;">${sectionLabel} — ${itemDescription}</p>
+      <p style="margin: 6px 0 0 0; color: #78350f; font-size: 13px;"><strong>Comment:</strong> ${comment}</p>
+    </div>
+    <p style="color: #374151; font-size: 14px; margin: 0;">
+      This section remains pending until the held item is resolved by the approver.
+    </p>
+    ${ctaButton(`${appUrl}/clearance/${clearanceId}`, 'View Clearance', '#d97706')}
+  `)
+
+  await sendEmail({
+    to: hrbp.email,
+    subject: `Item On Hold: ${itemDescription} — ${employee.full_name}`,
+    html,
+  })
+
+  console.log('[notifications] notifyItemHeld END: in-app to HRBP + employee, email to HRBP', { clearanceId, sectionKey, itemDescription })
+}

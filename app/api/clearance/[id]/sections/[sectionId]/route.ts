@@ -10,6 +10,7 @@ import {
 import {
   notifyHRBPSectionApproved,
   notifyHRBPSectionDenied,
+  notifyItemHeld,
 } from '@/lib/notifications'
 
 // PKT = UTC+5
@@ -229,6 +230,30 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
             })
           })
         )
+      }
+
+      // Notify HRBP + employee for any items just placed on HOLD
+      if (Array.isArray(body.items)) {
+        const heldNow = body.items.filter((i) => i.status === 'HOLD')
+        for (const heldItem of heldNow) {
+          const itemRecord = await prisma.clearanceItem.findUnique({
+            where: { id: heldItem.id },
+            select: { description: true },
+          })
+          if (itemRecord) {
+            try {
+              await notifyItemHeld(
+                clearanceId,
+                section.section_key,
+                user.full_name,
+                itemRecord.description,
+                heldItem.comments ?? ''
+              )
+            } catch (e) {
+              console.error('[PATCH section] notifyItemHeld error:', e)
+            }
+          }
+        }
       }
 
       // Check whether all items in the section are now terminal (APPROVED / NA only — HOLD is not terminal)
