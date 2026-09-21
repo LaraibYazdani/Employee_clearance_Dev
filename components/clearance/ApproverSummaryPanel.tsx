@@ -66,11 +66,31 @@ export default function ApproverSummaryPanel({
           </p>
         )}
         {sections.map((section) => {
-          const heldItems = (section.items ?? []).filter((i) => i.status === 'HOLD')
+          const allItems = section.items ?? []
+          const heldItems = allItems.filter((i) => i.status === 'HOLD')
           const hasHeld = section.status === 'PENDING' && heldItems.length > 0
           const colorKey = hasHeld ? 'PENDING_HOLD' : section.status
           const border = borderColors[colorKey] ?? 'border-l-gray-200'
           const bg = bgColors[colorKey] ?? 'bg-gray-50'
+
+          // Per-approver pending breakdown (only meaningful when section is PENDING and multiple approvers)
+          const displayApprovers = (section as any).display_approvers as { id: string; name: string }[] | undefined
+          const showApproverBreakdown = section.status === 'PENDING' && displayApprovers && displayApprovers.length > 1
+          const approverBreakdown = showApproverBreakdown
+            ? displayApprovers!.map((approver) => {
+                const theirItems = allItems.filter((item) =>
+                  (item as any).assigned_approvers?.some((a: { id: string }) => a.id === approver.id)
+                )
+                const allDone = theirItems.length > 0 && theirItems.every(
+                  (i) => i.status === 'APPROVED' || i.status === 'NA'
+                )
+                const anyPending = theirItems.some(
+                  (i) => i.status === 'PENDING' || i.status === 'HOLD'
+                )
+                return { ...approver, done: allDone, pending: anyPending }
+              })
+            : null
+
           return (
             <div
               key={section.id}
@@ -86,12 +106,26 @@ export default function ApproverSummaryPanel({
                   <span className="text-sm font-medium text-gray-800 truncate block">
                     {section.label || getSectionLabel(section.section_key)}
                   </span>
-                  {(() => {
-                    const approvers = (section as any).display_approvers as { id: string; name: string }[] | undefined
-                    if (approvers && approvers.length > 0) {
+                  {approverBreakdown ? (
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                      {approverBreakdown.map((a) => (
+                        <span key={a.id} className="flex items-center gap-1 text-xs">
+                          {a.done ? (
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                          ) : (
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
+                          )}
+                          <span className={a.done ? 'text-gray-400 line-through' : 'text-gray-600 font-medium'}>
+                            {a.name}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (() => {
+                    if (displayApprovers && displayApprovers.length > 0) {
                       return (
                         <span className="text-xs text-gray-500 block mt-0.5">
-                          {approvers.map((a) => a.name).join(', ')}
+                          {displayApprovers.map((a) => a.name).join(', ')}
                         </span>
                       )
                     }
