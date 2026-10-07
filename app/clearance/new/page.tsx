@@ -350,26 +350,29 @@ function YesNoNa({
   label,
   value,
   onChange,
+  groupTransfer = false,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
+  groupTransfer?: boolean
 }) {
-  const options = ['YES', 'NO', 'NA']
+  const options = groupTransfer ? ['YES', 'NO', 'GROUP_TRANSFER', 'NA'] : ['YES', 'NO', 'NA']
+  const activeClass = (opt: string) => {
+    if (opt === 'YES') return 'bg-green-600 text-white border-green-600'
+    if (opt === 'NO') return 'bg-red-500 text-white border-red-500'
+    if (opt === 'GROUP_TRANSFER') return 'bg-blue-600 text-white border-blue-600'
+    return 'bg-gray-500 text-white border-gray-500'
+  }
+  const label_text = (opt: string) => opt === 'GROUP_TRANSFER' ? 'Group Transfer' : opt
   return (
     <div>
       <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
         {label} <span className="text-red-500">*</span>
       </label>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {options.map((opt) => {
           const active = value === opt
-          const activeClass =
-            opt === 'YES'
-              ? 'bg-green-600 text-white border-green-600'
-              : opt === 'NO'
-              ? 'bg-red-500 text-white border-red-500'
-              : 'bg-gray-500 text-white border-gray-500'
           return (
             <button
               key={opt}
@@ -377,10 +380,10 @@ function YesNoNa({
               onClick={() => onChange(opt)}
               className={[
                 'px-5 py-1.5 rounded-lg text-xs font-semibold border transition-colors',
-                active ? activeClass : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50',
+                active ? activeClass(opt) : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50',
               ].join(' ')}
             >
-              {opt}
+              {label_text(opt)}
             </button>
           )
         })}
@@ -626,16 +629,19 @@ export default function InitiateClearancePage() {
                     label="Does the employee wish to buyback the laptop?"
                     value={formData.laptop_buyback}
                     onChange={setField('laptop_buyback')}
+                    groupTransfer
                   />
                   <YesNoNa
                     label="Does the employee wish to settle their Vehicle Loan?"
                     value={formData.vehicle_loan}
                     onChange={setField('vehicle_loan')}
+                    groupTransfer
                   />
                   <YesNoNa
                     label="Does the employee want to transfer their company provided SIM card to their name?"
                     value={formData.sim_transfer}
                     onChange={setField('sim_transfer')}
+                    groupTransfer
                   />
                   <YesNoNa
                     label="Has the Exit Interview been conducted?"
