@@ -22,6 +22,11 @@ interface FormData {
   other_query: string
 }
 
+interface QueuedFile {
+  id: string
+  file: File
+}
+
 /* ─────────────────────────────────────────────
    Step indicator
 ───────────────────────────────────────────── */
@@ -452,6 +457,94 @@ function SummaryRow({ label, value }: { label: string; value?: string }) {
 }
 
 /* ─────────────────────────────────────────────
+   Exit Interview File Picker
+───────────────────────────────────────────── */
+function ExitInterviewFilePicker({
+  files,
+  onChange,
+}: {
+  files: QueuedFile[]
+  onChange: (files: QueuedFile[]) => void
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  const handleFiles = (selected: FileList | null) => {
+    if (!selected) return
+    const newFiles: QueuedFile[] = Array.from(selected).map((f) => ({
+      id: `${Date.now()}_${Math.random()}`,
+      file: f,
+    }))
+    onChange([...files, ...newFiles])
+  }
+
+  const remove = (id: string) => onChange(files.filter((f) => f.id !== id))
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+        Exit Interview Attachments <span className="text-gray-400 font-normal normal-case">(optional)</span>
+      </label>
+
+      {/* Drop zone */}
+      <div
+        className="border-2 border-dashed border-gray-300 rounded-lg px-4 py-5 text-center hover:border-indigo-400 transition-colors cursor-pointer"
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files) }}
+      >
+        <svg className="w-8 h-8 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+        <p className="text-sm text-gray-500">
+          <span className="font-medium text-indigo-600">Click to upload</span> or drag and drop
+        </p>
+        <p className="text-xs text-gray-400 mt-1">PDF, JPEG, PNG, MP4 — up to 100 MB each</p>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.mp4,.mov"
+          className="hidden"
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+      </div>
+
+      {/* Queued file list */}
+      {files.length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {files.map((qf) => (
+            <li key={qf.id} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+                <span className="text-xs text-gray-700 truncate">{qf.file.name}</span>
+                <span className="text-xs text-gray-400 shrink-0">{formatSize(qf.file.size)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => remove(qf.id)}
+                className="text-gray-400 hover:text-red-500 transition-colors shrink-0"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
    Main Page
 ───────────────────────────────────────────── */
 export default function InitiateClearancePage() {
@@ -469,6 +562,7 @@ export default function InitiateClearancePage() {
     exit_interview: '',
     other_query: '',
   })
+  const [exitInterviewFiles, setExitInterviewFiles] = useState<QueuedFile[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
@@ -520,6 +614,24 @@ export default function InitiateClearancePage() {
       }
       const data = await res.json()
       const newId = data.id ?? data.clearance?.id
+
+      // Upload exit interview attachments after clearance is created
+      if (exitInterviewFiles.length > 0 && newId) {
+        for (const qf of exitInterviewFiles) {
+          try {
+            const fd = new FormData()
+            fd.append('file', qf.file)
+            await fetch(`/api/clearance/${newId}/exit-interview-attachments`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+              body: fd,
+            })
+          } catch {
+            // Non-fatal — clearance created, uploads best-effort
+          }
+        }
+      }
+
       router.push(`/clearance/${newId}`)
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : 'Something went wrong')
@@ -648,6 +760,10 @@ export default function InitiateClearancePage() {
                     value={formData.exit_interview}
                     onChange={setField('exit_interview')}
                   />
+                  <ExitInterviewFilePicker
+                    files={exitInterviewFiles}
+                    onChange={setExitInterviewFiles}
+                  />
                   <div>
                     <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
                       Please mention any other query
@@ -729,6 +845,12 @@ export default function InitiateClearancePage() {
                 <SummaryRow label="Vehicle Loan" value={formData.vehicle_loan} />
                 <SummaryRow label="SIM Transfer" value={formData.sim_transfer} />
                 <SummaryRow label="Exit Interview" value={formData.exit_interview} />
+                {exitInterviewFiles.length > 0 && (
+                  <SummaryRow
+                    label="Exit Interview Files"
+                    value={`${exitInterviewFiles.length} file${exitInterviewFiles.length > 1 ? 's' : ''} attached`}
+                  />
+                )}
                 {formData.other_query && (
                   <SummaryRow label="Other Query" value={formData.other_query} />
                 )}

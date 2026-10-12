@@ -49,6 +49,7 @@ model User {
   // Approver assignments
   approver_assignments ApproverAssignment[]        @relation("ApproverAssignments")
   uploaded_attachments ClearanceItemAttachment[]   @relation("AttachmentUploads")
+  exit_interview_attachments ExitInterviewAttachment[] @relation("ExitInterviewUploads")
 
   // Objection workflow
   objection_threads_raised   ObjectionThread[] @relation("ObjectionRaisedBy")
@@ -86,6 +87,7 @@ model ClearanceRequest {
   activity_logs       ActivityLog[]
   notifications       Notification[]
   objection_threads   ObjectionThread[]
+  exit_interview_attachments ExitInterviewAttachment[]
 
   @@map("clearance_requests")
 }
@@ -147,6 +149,21 @@ model ClearanceItemAttachment {
   created_at        DateTime      @default(now())
 
   @@map("clearance_item_attachments")
+}
+
+model ExitInterviewAttachment {
+  id                   String           @id @default(cuid())
+  clearance_request_id String
+  clearance_request    ClearanceRequest @relation(fields: [clearance_request_id], references: [id], onDelete: Cascade)
+  uploaded_by_id       String
+  uploaded_by          User             @relation("ExitInterviewUploads", fields: [uploaded_by_id], references: [id])
+  original_name        String
+  stored_path          String           @db.Text
+  file_size            Int
+  mime_type            String
+  created_at           DateTime         @default(now())
+
+  @@map("exit_interview_attachments")
 }
 
 model ApproverAssignment {
