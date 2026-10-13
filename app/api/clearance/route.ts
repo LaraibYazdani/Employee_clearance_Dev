@@ -267,6 +267,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
     vehicleLoan?: string
     simTransfer?: string
     exitInterview?: string
+    trainingBond?: string
     otherQuery?: string
   }
 
@@ -397,6 +398,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
             vehicle_loan: body.vehicleLoan ?? null,
             sim_transfer: body.simTransfer ?? null,
             exit_interview: body.exitInterview ?? null,
+            training_bond: body.trainingBond ?? null,
             other_query: body.otherQuery ?? null,
             clearance_sections: { create: sectionCreateData },
             finance_entries: {

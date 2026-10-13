@@ -344,7 +344,7 @@ export default function ClearanceDetailPage() {
           />
         </div>
 
-        {(clearance.laptop_buyback || clearance.vehicle_loan || clearance.sim_transfer || clearance.other_query) && (
+        {(clearance.laptop_buyback || clearance.vehicle_loan || clearance.sim_transfer || clearance.exit_interview || clearance.training_bond || clearance.other_query) && (
           <div className="mt-4 pt-4 border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
               Employee Queries
@@ -353,6 +353,8 @@ export default function ClearanceDetailPage() {
               <QueryBadge label="Laptop Buyback" value={clearance.laptop_buyback} />
               <QueryBadge label="Vehicle Loan" value={clearance.vehicle_loan} />
               <QueryBadge label="SIM Transfer" value={clearance.sim_transfer} />
+              <QueryBadge label="Exit Interview" value={clearance.exit_interview} />
+              <QueryBadge label="Training Bond" value={clearance.training_bond} />
             </div>
             {clearance.other_query && (
               <div className="mt-3">

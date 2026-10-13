@@ -72,6 +72,7 @@ model ClearanceRequest {
   vehicle_loan        String?
   sim_transfer        String?
   exit_interview      String?
+  training_bond       String?
   other_query         String?   @db.Text
   pdf_generated       Boolean   @default(false)
   pdf_generated_at    DateTime?

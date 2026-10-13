@@ -19,6 +19,7 @@ interface FormData {
   vehicle_loan: string
   sim_transfer: string
   exit_interview: string
+  training_bond: string
   other_query: string
 }
 
@@ -560,6 +561,7 @@ export default function InitiateClearancePage() {
     vehicle_loan: '',
     sim_transfer: '',
     exit_interview: '',
+    training_bond: '',
     other_query: '',
   })
   const [exitInterviewFiles, setExitInterviewFiles] = useState<QueuedFile[]>([])
@@ -584,7 +586,8 @@ export default function InitiateClearancePage() {
     formData.laptop_buyback !== '' &&
     formData.vehicle_loan !== '' &&
     formData.sim_transfer !== '' &&
-    formData.exit_interview !== ''
+    formData.exit_interview !== '' &&
+    formData.training_bond !== ''
 
   const handleSubmit = async () => {
     if (!selectedEmployee || !token) return
@@ -605,6 +608,7 @@ export default function InitiateClearancePage() {
           vehicleLoan: formData.vehicle_loan || undefined,
           simTransfer: formData.sim_transfer || undefined,
           exitInterview: formData.exit_interview || undefined,
+          trainingBond: formData.training_bond || undefined,
           otherQuery: formData.other_query || undefined,
         }),
       })
@@ -760,6 +764,11 @@ export default function InitiateClearancePage() {
                     value={formData.exit_interview}
                     onChange={setField('exit_interview')}
                   />
+                  <YesNoNa
+                    label="Is there a training bond signed by the employee?"
+                    value={formData.training_bond}
+                    onChange={setField('training_bond')}
+                  />
                   <ExitInterviewFilePicker
                     files={exitInterviewFiles}
                     onChange={setExitInterviewFiles}
@@ -845,6 +854,7 @@ export default function InitiateClearancePage() {
                 <SummaryRow label="Vehicle Loan" value={formData.vehicle_loan} />
                 <SummaryRow label="SIM Transfer" value={formData.sim_transfer} />
                 <SummaryRow label="Exit Interview" value={formData.exit_interview} />
+                <SummaryRow label="Training Bond" value={formData.training_bond} />
                 {exitInterviewFiles.length > 0 && (
                   <SummaryRow
                     label="Exit Interview Files"
