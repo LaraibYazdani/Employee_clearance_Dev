@@ -31,6 +31,7 @@ export interface ClearanceRequest {
   vehicle_loan?: string | null
   sim_transfer?: string | null
   exit_interview?: string | null
+  training_bond?: string | null
   other_query?: string | null
   pdf_generated: boolean
   pdf_generated_at?: string
