@@ -266,10 +266,13 @@ export default function SectionActionForm({
   const isObjectedSection = section.status === 'OBJECTED'
   const isReadOnly = isApproved || isDenied || isLocked || isCompleted
 
+  const isDeptApproverUser = user?.roles.some((r) => r.startsWith('DEPT_APPROVER_')) ?? false
+
   const visibleItems = useMemo(() => {
     if (!user) return items
     if (user.roles.includes('SUPER_ADMIN')) return items
-    if (user.roles.includes('PAYROLL_MANAGER')) return items
+    // PM-only (no dept approver role): see all items for objection workflow
+    if (user.roles.includes('PAYROLL_MANAGER') && !isDeptApproverUser) return items
     if (user.roles.includes('HRBP')) return items
     if (isReadOnly) return items
     const hasItemLevelAssignments = items.some(
@@ -279,17 +282,18 @@ export default function SectionActionForm({
     return items.filter((item) =>
       item.assigned_approvers?.some((a) => a.id === user.id)
     )
-  }, [items, user, isReadOnly])
+  }, [items, user, isReadOnly, isDeptApproverUser])
 
   // Whether the current user can perform approve/hold actions on items
   const canPerformActions = useMemo(() => {
     if (!user) return false
     if (isReadOnly) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
-    if (user.roles.includes('HRBP') && !user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))) return false
-    if (user.roles.includes('PAYROLL_MANAGER')) return false
+    if (user.roles.includes('HRBP') && !isDeptApproverUser) return false
+    // PM with no dept approver role: cannot approve dept items
+    if (user.roles.includes('PAYROLL_MANAGER') && !isDeptApproverUser) return false
     return true
-  }, [user, isReadOnly])
+  }, [user, isReadOnly, isDeptApproverUser])
 
   // Can a specific item be acted on by this user?
   const canActOnItem = (item: ItemRow): boolean => {
