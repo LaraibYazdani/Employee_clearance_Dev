@@ -648,7 +648,7 @@ export default function SectionActionForm({
 
                       {/* Comments */}
                       <td className="px-3 py-2.5 align-top">
-                        {isCompleted || isDenied || isLocked || item.status === 'NA' ? (
+                        {isCompleted || isDenied || isLocked || item.status === 'NA' || !canPerformActions ? (
                           <span className="text-gray-600 text-xs">{item.localComments || '—'}</span>
                         ) : (
                           <div>

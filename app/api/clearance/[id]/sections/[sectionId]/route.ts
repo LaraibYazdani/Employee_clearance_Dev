@@ -100,6 +100,9 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
 
     // SAVE_COMMENT — only updates item comments; skips all section-status guards
     if (body.action === 'SAVE_COMMENT') {
+      if (isSubjectEmployee && !isSuperAdmin && !isOwnerHRBP) {
+        return NextResponse.json({ error: 'Forbidden: Employees cannot edit comments' }, { status: 403 })
+      }
       if (!Array.isArray(body.items) || body.items.length === 0) {
         return NextResponse.json({ error: 'items array required for SAVE_COMMENT' }, { status: 400 })
       }
