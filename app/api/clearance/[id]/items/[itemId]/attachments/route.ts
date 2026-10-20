@@ -94,7 +94,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest, context: any) => 
   const isSubjectEmployee = clearance.employee_id === user.id
   const isDeptApprover = user.roles.some((r) => r.startsWith('DEPT_APPROVER_'))
   const isPayrollManager = user.roles.includes('PAYROLL_MANAGER')
-  if (!isSuperAdmin && !isOwnerHRBP && !isSubjectEmployee && !isDeptApprover && !isPayrollManager) {
+  if (!isSuperAdmin && !isOwnerHRBP && !isDeptApprover && !isPayrollManager) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

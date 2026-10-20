@@ -37,6 +37,7 @@ interface ItemAttachmentPanelProps {
   item: ItemRow
   clearanceId: string
   clearanceStatus: string
+  canUploadAttachment: boolean
   onAttachmentAdded: (itemId: string, attachment: ClearanceItemAttachment) => void
   onAttachmentDeleted: (itemId: string, attachmentId: string) => void
 }
@@ -45,6 +46,7 @@ function ItemAttachmentPanel({
   item,
   clearanceId,
   clearanceStatus,
+  canUploadAttachment,
   onAttachmentAdded,
   onAttachmentDeleted,
 }: ItemAttachmentPanelProps) {
@@ -55,7 +57,7 @@ function ItemAttachmentPanel({
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const isCompleted = clearanceStatus === 'COMPLETED'
-  const canUpload = !isCompleted
+  const canUpload = !isCompleted && canUploadAttachment
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -904,6 +906,7 @@ export default function SectionActionForm({
                             item={item}
                             clearanceId={clearanceId}
                             clearanceStatus={clearanceStatus}
+                            canUploadAttachment={canPerformActions}
                             onAttachmentAdded={handleAttachmentAdded}
                             onAttachmentDeleted={handleAttachmentDeleted}
                           />
