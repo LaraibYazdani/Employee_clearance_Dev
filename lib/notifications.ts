@@ -870,14 +870,24 @@ export async function notifyApproverRerouted(
       console.warn('[notifications] notifyApproverRerouted: DEPT_HEAD/LINE_MANAGER section but no line_manager_id', { clearanceId })
     }
   } else if (companyCode) {
-    const assignments = await prisma.approverAssignment.findMany({
+    const sectionLevelAssignments = await prisma.approverAssignment.findMany({
       where: { company_code: companyCode, section_key: sectionKey, item_key: 'section' },
       select: { approver_id: true },
     })
-    approverIds.push(...assignments.map((a) => a.approver_id))
+    if (sectionLevelAssignments.length > 0) {
+      approverIds.push(...sectionLevelAssignments.map((a) => a.approver_id))
+    } else {
+      // Section uses item-level assignments (e.g. Finance sections) — notify all distinct item approvers
+      const itemLevelAssignments = await prisma.approverAssignment.findMany({
+        where: { company_code: companyCode, section_key: sectionKey },
+        select: { approver_id: true },
+        distinct: ['approver_id'],
+      })
+      approverIds.push(...itemLevelAssignments.map((a) => a.approver_id))
+    }
     console.log('[notifications] notifyApproverRerouted: found assignmentCount:', {
       sectionKey,
-      assignmentCount: assignments.length,
+      assignmentCount: approverIds.length,
     })
   }
 

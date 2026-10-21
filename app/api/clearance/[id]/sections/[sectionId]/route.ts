@@ -103,6 +103,13 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
       if (isSubjectEmployee && !isSuperAdmin && !isOwnerHRBP) {
         return NextResponse.json({ error: 'Forbidden: Employees cannot edit comments' }, { status: 403 })
       }
+      const completedCheck = await prisma.clearanceRequest.findUnique({
+        where: { id: clearanceId },
+        select: { status: true },
+      })
+      if (completedCheck?.status === 'COMPLETED') {
+        return NextResponse.json({ error: 'Clearance is completed and can no longer be modified' }, { status: 409 })
+      }
       if (!Array.isArray(body.items) || body.items.length === 0) {
         return NextResponse.json({ error: 'items array required for SAVE_COMMENT' }, { status: 400 })
       }
@@ -168,6 +175,13 @@ export const PATCH = withAuth(async (req: AuthenticatedRequest, context: any) =>
     if (!isSuperAdmin && !hasRole && !isAssignedApprover) {
       return NextResponse.json(
         { error: 'Forbidden', message: 'You are not authorized to action this section' },
+        { status: 403 }
+      )
+    }
+
+    if (isSubjectEmployee && !isSuperAdmin) {
+      return NextResponse.json(
+        { error: 'Forbidden', message: 'Employees cannot approve or action their own clearance sections' },
         { status: 403 }
       )
     }
