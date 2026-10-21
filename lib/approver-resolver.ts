@@ -48,7 +48,7 @@ async function grantApproverRole(approverId: string, sectionKey: string): Promis
  * Revokes the corresponding DEPT_APPROVER_* role if the user is not assigned
  * to any item in that section across ANY company.
  */
-async function revokeApproverRoleIfNotAssigned(
+export async function revokeApproverRoleIfNotAssigned(
   approverId: string,
   _companyCode: string,
   sectionKey: string
