@@ -21,6 +21,7 @@ interface SectionActionFormProps {
   clearanceStatus: string
   showDeductibles: boolean
   isPayrollManager?: boolean
+  isSubjectEmployee?: boolean
   onActionComplete: () => void
 }
 
@@ -230,6 +231,7 @@ export default function SectionActionForm({
   clearanceStatus,
   showDeductibles,
   isPayrollManager = false,
+  isSubjectEmployee = false,
   onActionComplete,
 }: SectionActionFormProps) {
   const { token, user } = useAuth()
@@ -290,12 +292,13 @@ export default function SectionActionForm({
   const canPerformActions = useMemo(() => {
     if (!user) return false
     if (isReadOnly) return false
+    if (isSubjectEmployee) return false
     if (user.roles.includes('SUPER_ADMIN')) return true
     if (user.roles.includes('HRBP') && !isDeptApproverUser) return false
     // PM with no dept approver role: cannot approve dept items
     if (user.roles.includes('PAYROLL_MANAGER') && !isDeptApproverUser) return false
     return true
-  }, [user, isReadOnly, isDeptApproverUser])
+  }, [user, isReadOnly, isSubjectEmployee, isDeptApproverUser])
 
   // Can a specific item be acted on by this user?
   const canActOnItem = (item: ItemRow): boolean => {

@@ -480,6 +480,7 @@ export default function ClearanceDetailPage() {
                           clearanceStatus={clearance.status}
                           showDeductibles={showDeductibles}
                           isPayrollManager={isPayrollManager || (clearance.is_payroll_manager ?? false)}
+                          isSubjectEmployee={clearance.is_subject_employee ?? false}
                           onActionComplete={handleRefresh}
                         />
                       )}

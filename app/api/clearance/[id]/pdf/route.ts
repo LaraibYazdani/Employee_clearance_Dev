@@ -27,12 +27,13 @@ export const GET = withAuth(async (req: AuthenticatedRequest, context: any) => {
       return NextResponse.json({ error: 'Clearance not found' }, { status: 404 })
     }
 
-    // Access control: HRBP owner or SUPER_ADMIN
+    // Access control: HRBP owner, SUPER_ADMIN, PAYROLL_MANAGER, or FINANCE_MANAGER
     const isSuperAdmin = user.roles.includes('SUPER_ADMIN')
-    const isOwnerHRBP =
-      user.roles.includes('HRBP') && clearance.initiated_by_hrbp_id === user.id
+    const isOwnerHRBP = user.roles.includes('HRBP') && clearance.initiated_by_hrbp_id === user.id
+    const isPayrollManager = user.roles.includes('PAYROLL_MANAGER')
+    const isFinanceManager = user.roles.includes('FINANCE_MANAGER')
 
-    if (!isSuperAdmin && !isOwnerHRBP) {
+    if (!isSuperAdmin && !isOwnerHRBP && !isPayrollManager && !isFinanceManager) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
