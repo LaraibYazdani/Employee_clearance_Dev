@@ -40,14 +40,28 @@ const GROUP_LABELS: Record<GroupKey, string> = {
 
 const GROUP_ORDER: GroupKey[] = ['PAYABLES', 'INVENTORY', 'ERS', 'PAYROLL_FUNDS']
 
-const SECTION_2_KEYS = [
-  'IR_DEPT', 'IT_DEPT', 'SUPPLY_MGMT', 'ICS_DEPT',
-  'SECURITY', 'OTHER_FACILITIES', 'DEPT_HEAD',
-]
+// Section categorisation — fully dynamic, no hardcoded keys
+const isFinanceSection = (key: string) => key.includes('FINANCE')
+const isHRSection = (key: string) => key.includes('HR_DEPT') || key === 'OD_DEPT'
+const isPayrollSection = (key: string) => key === 'PAYROLL_MANAGER'
+const isDeptSection = (key: string) =>
+  !isFinanceSection(key) && !isHRSection(key) && !isPayrollSection(key)
 
-const OD_KEY = 'OD_DEPT'
-const HR_KEY = 'HR_DEPT'
-const FINANCE_KEY = 'FINANCE'
+function sectionSig(sec: any): string {
+  if (sec.status === 'APPROVED' && sec.approver_name)
+    return `${sec.approver_name}<br><span style="font-size:10px;color:#555;">${fmtDate(sec.decision_at)}</span>`
+  if (sec.status === 'DENIED')
+    return `<span style="color:red;">DENIED</span><br><span style="font-size:10px;">${sec.approver_name ?? ''}</span>`
+  return '—'
+}
+
+function queryBadge(val: string | null | undefined): string {
+  if (!val) return '—'
+  const map: Record<string, string> = {
+    YES: 'Yes', NO: 'No', NA: 'N/A', GROUP_TRANSFER: 'Group Transfer',
+  }
+  return map[val] ?? val
+}
 
 // ---------------------------------------------------------------------------
 // HTML Builder
@@ -61,136 +75,102 @@ function buildHTML(data: {
 }): string {
   const { clearance, employee, hrbp, sections, financeEntries } = data
 
-  const getSectionByKey = (key: string) => sections.find((s) => s.section_key === key)
+  const companyName = employee?.company ?? 'Packages Ltd.'
 
-  // ---- Section 2 rows ----
-  const section2Rows = SECTION_2_KEYS.map((key) => {
-    const sec = getSectionByKey(key)
-    if (!sec) return ''
+  // ---- Categorise sections ----
+  const deptSections = sections.filter((s) => isDeptSection(s.section_key))
+  const hrSections   = sections.filter((s) => isHRSection(s.section_key))
+  const finSections  = sections.filter((s) => isFinanceSection(s.section_key))
+  const pmSection    = sections.find((s) => isPayrollSection(s.section_key))
+
+  // ---- Section 2: Departmental rows (dynamic) ----
+  const section2Rows = deptSections.map((sec) => {
     const items = sec.clearance_items ?? []
-    const itemRows = items
-      .map(
-        (item: any) => `
-        <tr>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;color:#555;">&nbsp;</td>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.description}</td>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:center;">${item.status === 'NA' ? 'N/A' : item.status === 'APPROVED' ? '&#10003;' : ''}</td>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.comments ?? ''}</td>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">&nbsp;</td>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">&nbsp;</td>
-        </tr>`
-      )
-      .join('')
-
-    const sig =
-      sec.status === 'APPROVED' && sec.approver_name
-        ? `${sec.approver_name}<br><span style="font-size:10px;color:#555;">${fmtDate(sec.decision_at)}</span>`
-        : sec.status === 'DENIED'
-        ? `<span style="color:red;">DENIED</span><br><span style="font-size:10px;">${sec.approver_name ?? ''}</span>`
-        : ''
-
+    const itemRows = items.map((item: any) => `
+      <tr>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;color:#555;">&nbsp;</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.description}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:center;">${item.status === 'NA' ? 'N/A' : item.status === 'APPROVED' ? '&#10003;' : '—'}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.comments ?? ''}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.approver_name ?? ''}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">&nbsp;</td>
+      </tr>`).join('')
     return `
       <tr style="background:#f5f5f5;">
         <td colspan="6" style="padding:5px 8px;border:1px solid #ccc;font-size:12px;font-weight:bold;">
-          ${SECTION_LABELS[key] ?? key}
+          ${SECTION_LABELS[sec.section_key] ?? sec.section_key}
         </td>
       </tr>
       ${itemRows}
       <tr>
-        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;" colspan="4">&nbsp;</td>
+        <td colspan="4" style="padding:5px 8px;border:1px solid #ccc;">&nbsp;</td>
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${sec.approver_name ?? ''}</td>
-        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${sig}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${sectionSig(sec)}</td>
       </tr>`
   }).join('')
 
-  // ---- OD Section ----
-  const odSec = getSectionByKey(OD_KEY)
-  const odRows = odSec
-    ? (odSec.clearance_items ?? [])
-        .map(
-          (item: any) => `
-          <tr>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.description}</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:center;">
-              ${item.status === 'NA' ? 'N/A' : item.status === 'APPROVED' ? '&#10003;' : '—'}
-            </td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${odSec.approver_name ?? ''}</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">
-              ${odSec.status === 'APPROVED' && odSec.approver_name
-                ? `${odSec.approver_name} | ${fmtDate(odSec.decision_at)}`
-                : ''}
-            </td>
-          </tr>`
-        )
-        .join('')
-    : ''
+  // ---- Section 3B: HR & OD rows (dynamic) ----
+  const hrRows = hrSections.map((sec) => {
+    const items = sec.clearance_items ?? []
+    const itemRows = items.map((item: any) => `
+      <tr>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${SECTION_LABELS[sec.section_key] ?? sec.section_key}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.description}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:center;">${item.status === 'NA' ? 'N/A' : item.status === 'APPROVED' ? '&#10003;' : '—'}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.comments ?? ''}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${sec.approver_name ?? ''}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${sectionSig(sec)}</td>
+      </tr>`).join('')
+    return itemRows
+  }).join('')
 
-  // ---- HR Assets Section ----
-  const hrSec = getSectionByKey(HR_KEY)
-  const hrRows = hrSec
-    ? (hrSec.clearance_items ?? [])
-        .map(
-          (item: any) => `
-          <tr>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.description}</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:center;">
-              ${item.status === 'NA' ? 'N/A' : item.status === 'APPROVED' ? 'Yes' : '—'}
-            </td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.comments ?? ''}</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">Manager HR Operations</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">
-              ${hrSec.status === 'APPROVED' && hrSec.approver_name
-                ? `${hrSec.approver_name} | ${fmtDate(hrSec.decision_at)}`
-                : ''}
-            </td>
-          </tr>`
-        )
-        .join('')
-    : ''
-
-  // ---- Finance Section ----
-  const finSec = getSectionByKey(FINANCE_KEY)
+  // ---- Section 3C: Finance rows (dynamic) ----
   const financeGroupBlocks = GROUP_ORDER.map((groupKey) => {
     const groupEntries = financeEntries.filter((e: any) => e.section_group === groupKey)
     if (!groupEntries.length) return ''
-
-    const total = groupEntries.reduce(
-      (sum: number, e: any) => sum + (e.amount_pkr ?? 0),
-      0
-    )
-
-    const entryRows = groupEntries
-      .map(
-        (e: any) => `
-        <tr>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${e.gl_account ?? '—'}</td>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${e.particulars}</td>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:right;">${fmtPKR(e.amount_pkr)}</td>
-          <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">
-            ${finSec?.status === 'APPROVED' && finSec?.approver_name
-              ? `${finSec.approver_name} | ${fmtDate(finSec.decision_at)}`
-              : ''}
-          </td>
-        </tr>`
-      )
-      .join('')
-
+    const total = groupEntries.reduce((sum: number, e: any) => sum + (e.amount_pkr ?? 0), 0)
+    const relevantFinSec = finSections[0]
+    const entryRows = groupEntries.map((e: any) => `
+      <tr>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${e.gl_account ?? '—'}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${e.particulars}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:right;">${fmtPKR(e.amount_pkr)}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">
+          ${relevantFinSec?.status === 'APPROVED' && relevantFinSec?.approver_name
+            ? `${relevantFinSec.approver_name} | ${fmtDate(relevantFinSec.decision_at)}`
+            : ''}
+        </td>
+      </tr>`).join('')
     return `
       <tr style="background:#f0f0f0;">
-        <td colspan="4" style="padding:5px 8px;border:1px solid #ccc;font-size:12px;font-weight:bold;">
-          ${GROUP_LABELS[groupKey]}
-        </td>
+        <td colspan="4" style="padding:5px 8px;border:1px solid #ccc;font-size:12px;font-weight:bold;">${GROUP_LABELS[groupKey]}</td>
       </tr>
       ${entryRows}
       <tr style="background:#fafafa;">
         <td colspan="2" style="padding:5px 8px;border:1px solid #ccc;font-size:11px;font-weight:bold;text-align:right;">Total:</td>
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;font-weight:bold;text-align:right;">${fmtPKR(total)}</td>
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">
-          ${finSec?.status === 'APPROVED' && finSec?.approver_name
-            ? `Financial Controller/CFO: ${finSec.approver_name} | ${fmtDate(finSec.decision_at)}`
+          ${relevantFinSec?.status === 'APPROVED' && relevantFinSec?.approver_name
+            ? `Financial Controller/CFO: ${relevantFinSec.approver_name} | ${fmtDate(relevantFinSec.decision_at)}`
             : ''}
         </td>
       </tr>`
+  }).join('')
+
+  // ---- Finance section item rows (company-specific finance sections) ----
+  const finSectionItemRows = finSections.map((sec) => {
+    const items = sec.clearance_items ?? []
+    if (!items.length) return ''
+    const itemRows = items.map((item: any) => `
+      <tr>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${SECTION_LABELS[sec.section_key] ?? sec.section_key}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.description}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:center;">${item.status === 'NA' ? 'N/A' : item.status === 'APPROVED' ? '&#10003;' : '—'}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.comments ?? ''}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${item.approver_name ?? ''}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${sectionSig(sec)}</td>
+      </tr>`).join('')
+    return itemRows
   }).join('')
 
   return `<!DOCTYPE html>
@@ -201,35 +181,12 @@ function buildHTML(data: {
   <title>${IS_TEST_SERVER ? '[TEST] ' : ''}Employee Exit Clearance Form</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 12px;
-      color: #222;
-      background: #fff;
-      padding: 20px 24px;
-    }
-    h1 { font-size: 20px; font-weight: bold; color: #1a1a1a; }
-    h2 { font-size: 14px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #222; background: #fff; padding: 20px 24px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    th {
-      background: #e8e8e8;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      font-size: 11px;
-      text-align: left;
-      font-weight: bold;
-      text-transform: uppercase;
-    }
+    th { background: #e8e8e8; padding: 6px 8px; border: 1px solid #ccc; font-size: 11px; text-align: left; font-weight: bold; text-transform: uppercase; }
     td { padding: 5px 8px; border: 1px solid #ccc; font-size: 11px; vertical-align: top; }
-    .section-heading {
-      font-size: 13px;
-      font-weight: bold;
-      margin: 18px 0 6px;
-      padding-bottom: 3px;
-      border-bottom: 2px solid #333;
-      color: #111;
-    }
-    .label { font-weight: bold; white-space: nowrap; width: 160px; }
+    .section-heading { font-size: 13px; font-weight: bold; margin: 18px 0 6px; padding-bottom: 3px; border-bottom: 2px solid #333; color: #111; }
+    .label { font-weight: bold; white-space: nowrap; width: 150px; }
     .page-break { page-break-before: always; }
   </style>
 </head>
@@ -239,16 +196,12 @@ function buildHTML(data: {
 
   <!-- ===== HEADER ===== -->
   <div style="text-align:center;margin-bottom:20px;border-bottom:3px double #333;padding-bottom:12px;">
-    <h1 style="font-size:22px;font-weight:900;letter-spacing:0.08em;">Packages Ltd.</h1>
-    <h2 style="font-size:15px;font-weight:bold;text-transform:uppercase;letter-spacing:0.12em;margin-top:4px;">
+    <div style="font-size:22px;font-weight:900;letter-spacing:0.08em;">${companyName}</div>
+    <div style="font-size:15px;font-weight:bold;text-transform:uppercase;letter-spacing:0.12em;margin-top:4px;">
       Employee Exit Clearance Form
-    </h2>
+    </div>
     <p style="font-size:10px;color:#666;margin-top:4px;">
-      Clearance ID: ${clearance.id}
-      &nbsp;|&nbsp;
-      Status: ${clearance.status}
-      &nbsp;|&nbsp;
-      Generated: ${fmtDate(new Date().toISOString())}
+      Clearance ID: ${clearance.id} &nbsp;|&nbsp; Status: ${clearance.status} &nbsp;|&nbsp; Generated: ${fmtDate(new Date().toISOString())}
     </p>
   </div>
 
@@ -257,51 +210,50 @@ function buildHTML(data: {
   <table>
     <tbody>
       <tr>
-        <td class="label">Issued By</td>
-        <td>${fmt(clearance.issued_by)}</td>
-        <td class="label">Employee #</td>
-        <td>${fmt(employee?.sf_employee_id)}</td>
+        <td class="label">Employee #</td><td>${fmt(employee?.sf_employee_id)}</td>
+        <td class="label">Employee Name</td><td>${fmt(employee?.full_name)}</td>
       </tr>
       <tr>
-        <td class="label">Issuance Date</td>
-        <td>${fmtDate(clearance.issuance_date)}</td>
-        <td class="label">Employee Name</td>
-        <td>${fmt(employee?.full_name)}</td>
+        <td class="label">Designation</td><td>${fmt(employee?.designation)}</td>
+        <td class="label">Grade</td><td>${fmt(employee?.grade)}</td>
       </tr>
       <tr>
-        <td class="label">Receiving Date</td>
-        <td>${fmtDate(clearance.receiving_date)}</td>
-        <td class="label">Grade</td>
-        <td>${fmt(employee?.grade)}</td>
+        <td class="label">Department</td><td>${fmt(employee?.department)}</td>
+        <td class="label">Division</td><td>${fmt(employee?.division)}</td>
       </tr>
       <tr>
-        <td class="label">Date of Leaving</td>
-        <td>${fmtDate(clearance.date_of_leaving)}</td>
-        <td class="label">Designation</td>
-        <td>${fmt(employee?.designation)}</td>
+        <td class="label">Company</td><td>${fmt(employee?.company)}</td>
+        <td class="label">HRBP</td><td>${fmt(hrbp?.full_name)}</td>
       </tr>
       <tr>
-        <td class="label">HRBP</td>
-        <td>${fmt(hrbp?.full_name)}</td>
-        <td class="label">Department</td>
-        <td>${fmt(employee?.department)}</td>
+        <td class="label">Date of Leaving</td><td>${fmtDate(clearance.date_of_leaving)}</td>
+        <td class="label">Issued By</td><td>${fmt(clearance.issued_by)}</td>
       </tr>
       <tr>
-        <td class="label">Company</td>
-        <td>${fmt(employee?.company)}</td>
-        <td class="label">Division</td>
-        <td>${fmt(employee?.division)}</td>
+        <td class="label">Issuance Date</td><td>${fmtDate(clearance.issuance_date)}</td>
+        <td class="label">Receiving Date</td><td>${fmtDate(clearance.receiving_date)}</td>
       </tr>
     </tbody>
   </table>
+
+  <!-- ===== EMPLOYEE QUERIES ===== -->
+  ${(clearance.laptop_buyback || clearance.vehicle_loan || clearance.sim_transfer || clearance.exit_interview || clearance.training_bond || clearance.other_query) ? `
+  <div class="section-heading">Employee Queries</div>
+  <table>
+    <tbody>
+      ${clearance.laptop_buyback ? `<tr><td class="label">Laptop Buyback</td><td>${queryBadge(clearance.laptop_buyback)}</td><td class="label">Vehicle Loan</td><td>${queryBadge(clearance.vehicle_loan)}</td></tr>` : ''}
+      ${clearance.sim_transfer ? `<tr><td class="label">SIM Transfer</td><td>${queryBadge(clearance.sim_transfer)}</td><td class="label">Exit Interview</td><td>${queryBadge(clearance.exit_interview)}</td></tr>` : ''}
+      ${clearance.training_bond ? `<tr><td class="label">Training Bond</td><td>${queryBadge(clearance.training_bond)}</td><td class="label">Other Query</td><td>${fmt(clearance.other_query)}</td></tr>` : ''}
+    </tbody>
+  </table>` : ''}
 
   <!-- ===== SECTION 2: DEPARTMENTAL CLEARANCES ===== -->
   <div class="section-heading">Section 2 &mdash; Departmental Clearances</div>
   <table>
     <thead>
       <tr>
-        <th style="width:18%;">Department</th>
-        <th style="width:22%;">Item / Description</th>
+        <th style="width:16%;">Department</th>
+        <th style="width:24%;">Item / Description</th>
         <th style="width:7%;text-align:center;">Result</th>
         <th style="width:20%;">Comments</th>
         <th style="width:16%;">Authorized Person</th>
@@ -309,73 +261,88 @@ function buildHTML(data: {
       </tr>
     </thead>
     <tbody>
-      ${section2Rows}
+      ${section2Rows || `<tr><td colspan="6" style="text-align:center;color:#999;">No departmental sections</td></tr>`}
     </tbody>
   </table>
 
-  <!-- ===== SECTION 3A: OD DEPT ===== -->
-  <div class="section-heading">Section 3A &mdash; Organizational Development</div>
+  <!-- ===== SECTION 3: HR & OD CLEARANCES ===== -->
+  ${hrSections.length ? `
+  <div class="section-heading">Section 3 &mdash; HR &amp; OD Clearances</div>
   <table>
     <thead>
       <tr>
-        <th style="width:35%;">Description</th>
-        <th style="width:12%;text-align:center;">N/A or Result</th>
-        <th style="width:25%;">Authorized Person</th>
-        <th style="width:28%;">Signature / Date</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${odRows || `<tr><td colspan="4" style="text-align:center;color:#999;">No OD items</td></tr>`}
-    </tbody>
-  </table>
-
-  <!-- ===== SECTION 3B: HR ASSETS ===== -->
-  <div class="section-heading">Section 3B &mdash; HR Assets &amp; Handover</div>
-  <table>
-    <thead>
-      <tr>
-        <th style="width:28%;">Item</th>
-        <th style="width:12%;text-align:center;">Collected?</th>
-        <th style="width:22%;">Comments</th>
+        <th style="width:16%;">Section</th>
+        <th style="width:22%;">Item / Description</th>
+        <th style="width:7%;text-align:center;">Result</th>
+        <th style="width:18%;">Comments</th>
         <th style="width:18%;">Authorized Person</th>
-        <th style="width:20%;">Signature / Date</th>
+        <th style="width:19%;">Signature / Date</th>
       </tr>
     </thead>
     <tbody>
-      ${hrRows || `<tr><td colspan="5" style="text-align:center;color:#999;">No HR asset items</td></tr>`}
+      ${hrRows}
     </tbody>
-  </table>
+  </table>` : ''}
 
-  <!-- ===== SECTION 3C: FINANCE ===== -->
-  <div class="section-heading">Section 3C &mdash; Finance Clearance</div>
+  <!-- ===== SECTION 4: FINANCE CLEARANCE ===== -->
+  ${(finSections.length || financeEntries.length) ? `
+  <div class="section-heading">Section 4 &mdash; Finance Clearance</div>
+  ${finSectionItemRows ? `
+  <table>
+    <thead>
+      <tr>
+        <th style="width:16%;">Section</th>
+        <th style="width:22%;">Item / Description</th>
+        <th style="width:7%;text-align:center;">Result</th>
+        <th style="width:18%;">Comments</th>
+        <th style="width:18%;">Authorized Person</th>
+        <th style="width:19%;">Signature / Date</th>
+      </tr>
+    </thead>
+    <tbody>${finSectionItemRows}</tbody>
+  </table>` : ''}
+  ${financeGroupBlocks ? `
   <table>
     <thead>
       <tr>
         <th style="width:14%;">GL Account</th>
-        <th style="width:38%;">Particulars</th>
-        <th style="width:18%;text-align:right;">Amount PKR</th>
-        <th style="width:30%;">Signature / Date</th>
+        <th style="width:40%;">Particulars</th>
+        <th style="width:16%;text-align:right;">Amount PKR</th>
+        <th style="width:30%;">Authorized / Date</th>
       </tr>
     </thead>
+    <tbody>${financeGroupBlocks}</tbody>
+  </table>` : ''}` : ''}
+
+  <!-- ===== SECTION 5: PAYROLL SIGN-OFF ===== -->
+  ${pmSection ? `
+  <div class="section-heading">Section 5 &mdash; Payroll Sign-Off</div>
+  <table>
     <tbody>
-      ${financeGroupBlocks || `<tr><td colspan="4" style="text-align:center;color:#999;">No finance entries</td></tr>`}
+      <tr>
+        <td class="label">Status</td>
+        <td>${pmSection.status === 'APPROVED' ? '&#10003; Approved' : pmSection.status}</td>
+        <td class="label">Payroll Manager</td>
+        <td>${fmt(pmSection.approver_name)}</td>
+      </tr>
+      <tr>
+        <td class="label">Decision Date</td>
+        <td>${fmtDate(pmSection.decision_at)}</td>
+        <td class="label">Note</td>
+        <td>${fmt(pmSection.note)}</td>
+      </tr>
     </tbody>
-  </table>
+  </table>` : ''}
 
   <!-- ===== FOOTER ===== -->
-  <div style="margin-top:30px;border-top:1px solid #ccc;padding-top:10px;display:flex;justify-content:space-between;align-items:flex-end;">
-    <div>
-      <p style="font-size:10px;color:#666;">
-        This document is system-generated from the Packages Ltd. Employee Exit Clearance Portal.
-        ${IS_TEST_SERVER ? '<strong style="color:#b91c1c;">(TEST / DEVELOPMENT DOCUMENT &mdash; NOT VALID FOR OFFICIAL USE)</strong>' : ''}
-      </p>
-      <p style="font-size:10px;color:#666;">
-        Clearance ID: ${clearance.id} &nbsp;|&nbsp; Generated on: ${fmtDate(new Date().toISOString())}
-      </p>
-    </div>
-    <div style="text-align:right;">
-      <p style="font-size:10px;color:#888;">Page 1 of 1</p>
-    </div>
+  <div style="margin-top:30px;border-top:1px solid #ccc;padding-top:10px;">
+    <p style="font-size:10px;color:#666;">
+      This document is system-generated from the ${companyName} Employee Exit Clearance Portal.
+      ${IS_TEST_SERVER ? '<strong style="color:#b91c1c;">(TEST / DEVELOPMENT DOCUMENT &mdash; NOT VALID FOR OFFICIAL USE)</strong>' : ''}
+    </p>
+    <p style="font-size:10px;color:#666;margin-top:2px;">
+      Clearance ID: ${clearance.id} &nbsp;|&nbsp; Generated on: ${fmtDate(new Date().toISOString())}
+    </p>
   </div>
 
 </body>
