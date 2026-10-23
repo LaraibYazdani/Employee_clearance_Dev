@@ -129,7 +129,16 @@ function buildHTML(data: {
     const groupEntries = financeEntries.filter((e: any) => e.section_group === groupKey)
     if (!groupEntries.length) return ''
     const total = groupEntries.reduce((sum: number, e: any) => sum + (e.amount_pkr ?? 0), 0)
-    const relevantFinSec = finSections[0]
+    const relevantFinSec = (() => {
+      const sk = (s: any) => (s.section_key as string).toUpperCase()
+      if (groupKey === 'PAYABLES' || groupKey === 'INVENTORY')
+        return finSections.find((s) => sk(s).includes('INVENTORY_PAYABLES') || sk(s).includes('INVENTORY'))
+      if (groupKey === 'ERS')
+        return finSections.find((s) => sk(s).includes('ERS'))
+      if (groupKey === 'PAYROLL_FUNDS')
+        return finSections.find((s) => sk(s).includes('PAYROLL'))
+      return finSections[0]
+    })() ?? finSections[0]
     const entryRows = groupEntries.map((e: any) => `
       <tr>
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${e.gl_account ?? '—'}</td>
