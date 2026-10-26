@@ -143,7 +143,7 @@ function buildHTML(data: {
       <tr>
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${e.gl_account ?? '—'}</td>
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">${e.particulars}</td>
-        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:right;">${fmtPKR(e.amount_pkr)}</td>
+        <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;text-align:right;">${e.amount_pkr != null ? fmtPKR(e.amount_pkr) : '0.00'}</td>
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">
           ${relevantFinSec?.status === 'APPROVED' && relevantFinSec?.approver_name
             ? `${relevantFinSec.approver_name} | ${fmtDate(relevantFinSec.decision_at)}`
@@ -160,7 +160,7 @@ function buildHTML(data: {
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;font-weight:bold;text-align:right;">${fmtPKR(total)}</td>
         <td style="padding:5px 8px;border:1px solid #ccc;font-size:11px;">
           ${relevantFinSec?.status === 'APPROVED' && relevantFinSec?.approver_name
-            ? `Financial Controller/CFO: ${relevantFinSec.approver_name} | ${fmtDate(relevantFinSec.decision_at)}`
+            ? `${relevantFinSec.approver_name} | ${fmtDate(relevantFinSec.decision_at)}`
             : ''}
         </td>
       </tr>`
