@@ -1,4 +1,4 @@
-export const IS_TEST_SERVER = true
+export const IS_TEST_SERVER = false
 
 export const SITE_NAME = 'Employee Clearance Portal'
 export const COMPANY_NAME = 'Packages Group'
