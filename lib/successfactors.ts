@@ -267,7 +267,7 @@ function parseUserResult(result: any, userId: string): SFUserProfile {
     title: result.title ?? '',
     payGrade: result.payGrade ?? '',
     division: result.division ?? '',
-    department: result.department || result.custom02 || '',
+    department: [result.department, result.custom02].find((v) => v && v !== 'N/A') ?? '',
     hireDate: result.hireDate ?? null,
     dateOfBirth: result.dateOfBirth ?? null,
     emplStatus: result.emplStatus ?? '',
