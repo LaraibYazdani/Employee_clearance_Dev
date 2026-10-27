@@ -267,7 +267,7 @@ function parseUserResult(result: any, userId: string): SFUserProfile {
     title: result.title ?? '',
     payGrade: result.payGrade ?? '',
     division: result.division ?? '',
-    department: result.department ?? '',
+    department: result.department || result.custom02 || '',
     hireDate: result.hireDate ?? null,
     dateOfBirth: result.dateOfBirth ?? null,
     emplStatus: result.emplStatus ?? '',
@@ -355,7 +355,7 @@ async function liveSearchEmployees(query: string): Promise<SFUserProfile[]> {
   if (isNumericId) {
     try {
       const data = await sfGet(
-        `/odata/v2/User?$filter=userId eq '${query.trim()}' and (status eq 'f' or status eq 't')&$format=json&$top=1&$select=userId,displayName,firstName,lastName,email,title,payGrade,division,department,emplStatus`
+        `/odata/v2/User?$filter=userId eq '${query.trim()}' and (status eq 'f' or status eq 't')&$format=json&$top=1&$select=userId,displayName,firstName,lastName,email,title,payGrade,division,department,custom02,emplStatus`
       )
       for (const r of data?.d?.results ?? []) {
         if (!seen.has(r.userId)) { seen.add(r.userId); results.push(mapSFUserResult(r)) }
@@ -369,7 +369,7 @@ async function liveSearchEmployees(query: string): Promise<SFUserProfile[]> {
   try {
     const encoded = encodeURIComponent(query)
     const data = await sfGet(
-      `/odata/v2/User?$filter=substringof('${encoded}',displayName) and (status eq 'f' or status eq 't')&$format=json&$top=20&$select=userId,displayName,firstName,lastName,email,title,payGrade,division,department,emplStatus`
+      `/odata/v2/User?$filter=substringof('${encoded}',displayName) and (status eq 'f' or status eq 't')&$format=json&$top=20&$select=userId,displayName,firstName,lastName,email,title,payGrade,division,department,custom02,emplStatus`
     )
     for (const r of data?.d?.results ?? []) {
       if (!seen.has(r.userId)) { seen.add(r.userId); results.push(mapSFUserResult(r)) }
