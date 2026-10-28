@@ -9,6 +9,7 @@ interface AuthContextValue {
   isLoading: boolean
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  loginWithToken: (token: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   refreshUser: () => Promise<void>
 }
@@ -90,6 +91,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   )
 
+  const loginWithToken = useCallback(
+    async (newToken: string): Promise<{ success: boolean; error?: string }> => {
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${newToken}` },
+        })
+        if (!res.ok) return { success: false, error: 'Invalid token' }
+        const data: User = await res.json()
+        localStorage.setItem(TOKEN_KEY, newToken)
+        setTokenCookie(newToken)
+        setToken(newToken)
+        setUser(data)
+        return { success: true }
+      } catch {
+        return { success: false, error: 'Network error. Please try again.' }
+      }
+    },
+    []
+  )
+
   const refreshUser = useCallback(async () => {
     const stored = localStorage.getItem(TOKEN_KEY)
     if (!stored) return
@@ -121,6 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         login,
+        loginWithToken,
         logout,
         refreshUser,
       }}

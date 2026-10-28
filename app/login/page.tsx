@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -16,13 +16,34 @@ function getRoleRedirect(roles: string[]): string {
 }
 
 export default function LoginPage() {
-  const { login, isAuthenticated, user, isLoading } = useAuth()
+  const { login, loginWithToken, isAuthenticated, user, isLoading } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // Handle IAS callback token
+  useEffect(() => {
+    const iasToken = searchParams.get('ias_token')
+    const iasError = searchParams.get('ias_error')
+    if (iasError) {
+      setError('SAP login failed. Please try again or use your Employee ID and password.')
+      return
+    }
+    if (iasToken) {
+      setSubmitting(true)
+      loginWithToken(iasToken).then((result) => {
+        if (!result.success) {
+          setError(result.error ?? 'SAP login failed. Please try again.')
+          setSubmitting(false)
+        }
+        // Success redirect handled by the authenticated useEffect below
+      })
+    }
+  }, [searchParams, loginWithToken])
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -132,10 +153,32 @@ export default function LoginPage() {
             </div>
           </form>
 
+          {/* Divider */}
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-white px-2 text-gray-400">or</span>
+            </div>
+          </div>
+
+          {/* SAP IAS SSO button */}
+          <a
+            href="/api/auth/ias"
+            className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="24" height="24" rx="4" fill="#0070F2"/>
+              <text x="4" y="17" fontSize="11" fontWeight="bold" fill="white" fontFamily="Arial, sans-serif">SAP</text>
+            </svg>
+            Sign in with SAP
+          </a>
+
           {/* Hint */}
-          <div className="mt-6 rounded-lg bg-blue-50 border border-blue-100 p-3">
+          <div className="mt-5 rounded-lg bg-blue-50 border border-blue-100 p-3">
             <p className="text-xs text-blue-700">
-              Use your <strong>SAP SuccessFactors Employee ID</strong> and password to sign in.
+              Use your <strong>SAP SuccessFactors Employee ID</strong> and password, or sign in with your SAP account.
             </p>
           </div>
         </div>
