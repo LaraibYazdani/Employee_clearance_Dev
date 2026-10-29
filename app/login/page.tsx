@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [showAdminLogin, setShowAdminLogin] = useState(false)
 
   // Handle IAS callback token
   useEffect(() => {
@@ -107,7 +108,10 @@ export default function LoginPage() {
 
         {/* Form */}
         <div className="px-8 py-8">
-          <h2 className="text-lg font-semibold text-gray-800 mb-6">Sign in to your account</h2>
+          <h2 className="text-lg font-semibold text-gray-800 mb-2">Sign in to your account</h2>
+          <p className="text-xs text-gray-500 mb-6">
+            The login method has changed. Use the button below to sign in with your SAP SuccessFactors account.
+          </p>
 
           {error && (
             <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -118,68 +122,63 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="Employee ID or Email"
-              type="text"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. 10009673"
-              required
-              autoComplete="username"
-              autoFocus
-            />
-            <Input
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              autoComplete="current-password"
-            />
-
-            <div className="pt-2">
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                loading={submitting}
-                disabled={submitting}
-                className="w-full"
-              >
-                Sign in
-              </Button>
-            </div>
-          </form>
-
-          {/* Divider */}
-          <div className="relative my-5">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-white px-2 text-gray-400">or</span>
-            </div>
-          </div>
-
-          {/* SAP IAS SSO button */}
+          {/* SAP IAS SSO button — primary action */}
           <a
             href="/api/auth/ias"
-            className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+            className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-[#0070F2] px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#0060d0] transition-colors"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="24" height="24" rx="4" fill="#0070F2"/>
+              <rect width="24" height="24" rx="4" fill="white" fillOpacity="0.2"/>
               <text x="4" y="17" fontSize="11" fontWeight="bold" fill="white" fontFamily="Arial, sans-serif">SAP</text>
             </svg>
-            Sign in with SAP
+            Sign in with SAP SuccessFactors
           </a>
 
-          {/* Hint */}
-          <div className="mt-5 rounded-lg bg-blue-50 border border-blue-100 p-3">
-            <p className="text-xs text-blue-700">
-              Use your <strong>SAP SuccessFactors Employee ID</strong> and password, or sign in with your SAP account.
-            </p>
+          {/* Admin fallback — collapsed by default */}
+          <div className="mt-6">
+            <button
+              type="button"
+              onClick={() => setShowAdminLogin((v) => !v)}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors mx-auto"
+            >
+              <svg className={`h-3 w-3 transition-transform ${showAdminLogin ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              Admin / manual login
+            </button>
+
+            {showAdminLogin && (
+              <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+                <Input
+                  label="Employee ID or Email"
+                  type="text"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="e.g. 10009673"
+                  required
+                  autoComplete="username"
+                />
+                <Input
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  autoComplete="current-password"
+                />
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  loading={submitting}
+                  disabled={submitting}
+                  className="w-full"
+                >
+                  Sign in
+                </Button>
+              </form>
+            )}
           </div>
         </div>
       </div>
