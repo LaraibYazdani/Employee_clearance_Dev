@@ -25,6 +25,24 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showAdminLogin, setShowAdminLogin] = useState(false)
+  const [iasLoading, setIasLoading] = useState(false)
+
+  const handleIasLogin = async () => {
+    setIasLoading(true)
+    try {
+      const res = await fetch('/api/auth/ias')
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        setError('SAP login is not configured. Please contact your administrator.')
+        setIasLoading(false)
+      }
+    } catch {
+      setError('Could not connect to SAP. Please try again.')
+      setIasLoading(false)
+    }
+  }
 
   // Handle IAS callback token
   useEffect(() => {
@@ -123,16 +141,22 @@ export default function LoginPage() {
           )}
 
           {/* SAP IAS SSO button — primary action */}
-          <a
-            href="/api/auth/ias"
-            className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-[#0070F2] px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#0060d0] transition-colors"
+          <button
+            type="button"
+            onClick={handleIasLogin}
+            disabled={iasLoading}
+            className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-[#0070F2] px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#0060d0] transition-colors disabled:opacity-70"
           >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="24" height="24" rx="4" fill="white" fillOpacity="0.2"/>
-              <text x="4" y="17" fontSize="11" fontWeight="bold" fill="white" fontFamily="Arial, sans-serif">SAP</text>
-            </svg>
-            Sign in with SAP SuccessFactors
-          </a>
+            {iasLoading ? (
+              <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+            ) : (
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="24" height="24" rx="4" fill="white" fillOpacity="0.2"/>
+                <text x="4" y="17" fontSize="11" fontWeight="bold" fill="white" fontFamily="Arial, sans-serif">SAP</text>
+              </svg>
+            )}
+            {iasLoading ? 'Redirecting to SAP...' : 'Sign in with SAP SuccessFactors'}
+          </button>
 
           {/* Admin fallback — collapsed by default */}
           <div className="mt-6">

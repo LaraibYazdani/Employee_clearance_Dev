@@ -25,9 +25,8 @@ export async function GET() {
   const authorizeUrl = new URL(IAS_AUTHORIZE_URL)
   authorizeUrl.search = params.toString()
 
-  const headers = new Headers()
-  headers.set('Location', authorizeUrl.href)
+  const headers = new Headers({ 'Content-Type': 'application/json' })
   headers.append('Set-Cookie', `ias_state=${state}; HttpOnly; Max-Age=600; Path=/; SameSite=Lax`)
   headers.append('Set-Cookie', `ias_nonce=${nonce}; HttpOnly; Max-Age=600; Path=/; SameSite=Lax`)
-  return new Response(null, { status: 302, headers })
+  return new Response(JSON.stringify({ url: authorizeUrl.href }), { status: 200, headers })
 }
