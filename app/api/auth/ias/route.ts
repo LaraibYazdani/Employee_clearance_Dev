@@ -22,8 +22,12 @@ export async function GET() {
     nonce,
   })
 
-  const response = NextResponse.redirect(`${IAS_AUTHORIZE_URL}?${params}`)
-  response.cookies.set('ias_state', state, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' })
-  response.cookies.set('ias_nonce', nonce, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' })
-  return response
+  const authorizeUrl = new URL(IAS_AUTHORIZE_URL)
+  authorizeUrl.search = params.toString()
+
+  const headers = new Headers()
+  headers.set('Location', authorizeUrl.href)
+  headers.append('Set-Cookie', `ias_state=${state}; HttpOnly; Max-Age=600; Path=/; SameSite=Lax`)
+  headers.append('Set-Cookie', `ias_nonce=${nonce}; HttpOnly; Max-Age=600; Path=/; SameSite=Lax`)
+  return new Response(null, { status: 302, headers })
 }
