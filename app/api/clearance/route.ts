@@ -131,7 +131,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       // Pure HRBP (no dept approver role) — only see clearances they initiated
       where.initiated_by_hrbp_id = user.id
     } else if (isPayrollManager) {
-      // Payroll manager sees clearances pending their sign-off for companies they're assigned to
+      // Pure payroll manager (no DEPT_APPROVER role) — sees clearances pending their sign-off
       const pmAssignments = await prisma.approverAssignment.findMany({
         where: { approver_id: user.id, section_key: 'PAYROLL_MANAGER' },
         select: { company_code: true },
@@ -188,6 +188,23 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
         // If this user is also an HRBP, include clearances they initiated
         if (user.roles.includes('HRBP')) {
           orConditions.push({ initiated_by_hrbp_id: user.id })
+        }
+        // If this user is also a PAYROLL_MANAGER, include payroll clearances too
+        if (isPayrollManager) {
+          const pmAssignments = await prisma.approverAssignment.findMany({
+            where: { approver_id: user.id, section_key: 'PAYROLL_MANAGER' },
+            select: { company_code: true },
+            distinct: ['company_code'],
+          })
+          const pmCompanyCodes = pmAssignments.map((a) => a.company_code)
+          if (pmCompanyCodes.length > 0) {
+            orConditions.push({
+              AND: [
+                { employee: { company_code: { in: pmCompanyCodes } } },
+                { status: { in: ['PENDING_PAYROLL', 'COMPLETED'] } },
+              ],
+            })
+          }
         }
         where.OR = orConditions
       } else {
