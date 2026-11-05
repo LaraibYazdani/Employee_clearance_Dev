@@ -130,7 +130,7 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
     } else if (user.roles.includes('HRBP') && !isDeptApprover && !isLineManager) {
       // Pure HRBP (no dept approver role) — only see clearances they initiated
       where.initiated_by_hrbp_id = user.id
-    } else if (isPayrollManager) {
+    } else if (isPayrollManager && !isDeptApprover && !isLineManager) {
       // Pure payroll manager (no DEPT_APPROVER role) — sees clearances pending their sign-off
       const pmAssignments = await prisma.approverAssignment.findMany({
         where: { approver_id: user.id, section_key: 'PAYROLL_MANAGER' },
