@@ -210,10 +210,28 @@ export const GET = withAuth(async (req: AuthenticatedRequest) => {
       } else {
         // Pure line manager — only see clearances where they are the line manager
         // or are stored as section approver (handles edge cases)
-        where.OR = [
+        const lmOrConditions: any[] = [
           { employee: { line_manager_id: user.id } },
           { clearance_sections: { some: { approver_id: user.id } } },
         ]
+        // If also a PAYROLL_MANAGER, merge in payroll clearances
+        if (isPayrollManager) {
+          const pmAssignments = await prisma.approverAssignment.findMany({
+            where: { approver_id: user.id, section_key: 'PAYROLL_MANAGER' },
+            select: { company_code: true },
+            distinct: ['company_code'],
+          })
+          const pmCompanyCodes = pmAssignments.map((a) => a.company_code)
+          if (pmCompanyCodes.length > 0) {
+            lmOrConditions.push({
+              AND: [
+                { employee: { company_code: { in: pmCompanyCodes } } },
+                { status: { in: ['PENDING_PAYROLL', 'COMPLETED'] } },
+              ],
+            })
+          }
+        }
+        where.OR = lmOrConditions
       }
     } else {
       // EMPLOYEE / unverified HRBP — default shows clearances they initiated;
